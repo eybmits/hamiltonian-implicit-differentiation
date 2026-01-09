@@ -128,49 +128,10 @@ def _savefig(fig: plt.Figure, path: Path):
         fig.savefig(path)
 
 
-def _snap_range(x0: float, x1: float, step: float) -> Tuple[float, float]:
-    if step <= 0:
-        return x0, x1
-    return step * math.floor(x0 / step), step * math.ceil(x1 / step)
-
-
-def _last_k(a: np.ndarray, k: int) -> np.ndarray:
-    if a.size <= k:
-        return a
-    return a[-k:]
-
-
-def _best_k_xy(x: np.ndarray, y: np.ndarray, k: int, maximize: bool = True):
-    """
-    Return the best-k points (x_i, y_i) according to y (descending if maximize).
-    Stable enough + handles NaNs/Infs.
-    """
-    x = np.asarray(x, float)
-    y = np.asarray(y, float)
-
-    m = np.isfinite(x) & np.isfinite(y)
-    x, y = x[m], y[m]
-    if x.size == 0:
-        return x, y
-
-    if x.size <= k:
-        idx = np.argsort(y)[::-1] if maximize else np.argsort(y)
-        return x[idx], y[idx]
-
-    if maximize:
-        idx = np.argpartition(y, -k)[-k:]
-        idx = idx[np.argsort(y[idx])[::-1]]  # best first
-    else:
-        idx = np.argpartition(y, k)[:k]
-        idx = idx[np.argsort(y[idx])]        # worst first
-    return x[idx], y[idx]
-
-
-def plot_envelope_and_expectations(path: Path, lam_grid, J_cl_star, hist_id, hist_fd, last_k_points: int = 10):
+def plot_envelope_and_expectations(path: Path, lam_grid, J_cl_star, hist_id, hist_fd):
     """
     Fig1:
-      - main axis: full classical envelope J_cl^*(λ) + all trajectory points + shaded zoom band [x0,x1]
-      - inset: zoomed view (same [x0,x1]), showing BEST last_k_points (by J), semi-transparent
+      - main axis: full classical envelope J_cl^*(λ) + all trajectory points
     """
     set_pub_style(grid=False)
     fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
@@ -180,7 +141,7 @@ def plot_envelope_and_expectations(path: Path, lam_grid, J_cl_star, hist_id, his
 
     # Full classical envelope (diagnostic)
     ax.plot(lam_grid, J_cl_star, color=COLORS["ENV"], lw=2.0,
-            label=r"Classical envelope $J_{\mathrm{cl}}^*(\lambda)$", zorder=1)
+            label=r"Envelope $J_{\mathrm{cl}}^*(\lambda)$", zorder=1)
 
     # Scatter full trajectories (no connecting lines in (λ, value))
     ax.scatter(hist_id["lam_pre"], hist_id["J"], s=10, marker="o", color=COLORS["ID"],
@@ -188,76 +149,13 @@ def plot_envelope_and_expectations(path: Path, lam_grid, J_cl_star, hist_id, his
     ax.scatter(hist_fd["lam_pre"], hist_fd["J"], s=10, marker="s", color=COLORS["FD"],
                alpha=0.25, edgecolors="none", label=r"VQE + FD (black-box $F$)", zorder=2)
 
-    # Determine zoom window from visited λ range (both methods)
-    lam_all = np.concatenate([hist_id["lam_pre"], hist_fd["lam_pre"]]).astype(float)
-    lo, hi = float(np.min(lam_all)), float(np.max(lam_all))
-    full_lo, full_hi = float(lam_grid[0]), float(lam_grid[-1])
-
-    pad = max(0.25 * (hi - lo), 0.05 * (full_hi - full_lo))
-    x0_raw = max(full_lo, lo - pad)
-    x1_raw = min(full_hi, hi + pad)
-
-    # Snap to a nice grid
-    snap = (full_hi - full_lo) / 40.0
-    x0, x1 = _snap_range(x0_raw, x1_raw, snap)
-    x0, x1 = max(full_lo, x0), min(full_hi, x1)
-
-    # Shade EXACTLY the zoom range on main axis
-    ax.axvspan(x0, x1, color="#9e9e9e", alpha=0.12, zorder=0)
-
     ax.set_xlabel(r"Control parameter $\lambda$")
     ax.set_ylabel(r"Value estimate $\hat F(\lambda)$")
-    ax.set_xlim(full_lo, full_hi)
+    ax.set_xlim(float(lam_grid[0]), float(lam_grid[-1]))
     ax.legend(loc="lower left", frameon=False)
-
-    # Inset: zoomed view
-    ax_in = ax.inset_axes([0.58, 0.10, 0.38, 0.36])  # lower-right
-    ax_in.plot(lam_grid, J_cl_star, color=COLORS["ENV"], lw=1.6, zorder=1)
-
-    # BEST K points in inset (by J, not last points)
-    lam_id_best, J_id_best = _best_k_xy(hist_id["lam_pre"], hist_id["J"], last_k_points, maximize=True)
-    lam_fd_best, J_fd_best = _best_k_xy(hist_fd["lam_pre"], hist_fd["J"], last_k_points, maximize=True)
-
-    # semi-transparent fills + crisp edges for readability
-    id_fc = mpl.colors.to_rgba(COLORS["ID"], 0.75)
-    fd_fc = mpl.colors.to_rgba(COLORS["FD"], 0.75)
-    edge = mpl.colors.to_rgba("white", 0.95)
-
-    ax_in.scatter(
-        lam_id_best, J_id_best,
-        s=20, marker="o",
-        facecolors=id_fc, edgecolors=edge, linewidth=0.5,
-        zorder=3
-    )
-    ax_in.scatter(
-        lam_fd_best, J_fd_best,
-        s=20, marker="s",
-        facecolors=fd_fc, edgecolors=edge, linewidth=0.5,
-        zorder=3
-    )
-
-    ax_in.set_xlim(x0, x1)
-
-    # y-limits based on envelope + best points in inset
-    m = (lam_grid >= x0) & (lam_grid <= x1)
-    y_candidates = [float(np.min(J_cl_star[m])), float(np.max(J_cl_star[m]))]
-    if J_id_best.size:
-        y_candidates += [float(np.min(J_id_best)), float(np.max(J_id_best))]
-    if J_fd_best.size:
-        y_candidates += [float(np.min(J_fd_best)), float(np.max(J_fd_best))]
-
-    y0, y1 = min(y_candidates), max(y_candidates)
-    yr = max(1e-9, y1 - y0)
-    ax_in.set_ylim(y0 - 0.12 * yr, y1 + 0.12 * yr)
-
-    ax_in.set_xticks([])
-    ax_in.set_yticks([])
-    for spine in ax_in.spines.values():
-        spine.set_linewidth(0.6)
 
     _savefig(fig, path)
     plt.close(fig)
-
 
 def _truncate_step_to_budget(evals: np.ndarray, y: np.ndarray, budget: float):
     """
@@ -295,8 +193,7 @@ def plot_bestJ_vs_evals(path: Path, hist_id, hist_fd, J_cl_max=None, budget: flo
     """
     Fig3: Best-so-far value vs cumulative energy evaluations.
 
-    If 'budget' is provided, both curves are truncated to that common budget and we annotate:
-      t_ID(B), t_FD(B),  F_ID(B), F_FD(B), Δ.
+    If 'budget' is provided, both curves are truncated to that common budget.
     """
     set_pub_style(grid=False)
     fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
@@ -320,26 +217,7 @@ def plot_bestJ_vs_evals(path: Path, hist_id, hist_fd, J_cl_max=None, budget: flo
     ax.set_ylabel(r"Best-so-far value $\hat F$")
     ax.set_xlim(0.0, budget)
 
-    # ---- Annotation (compact, placed in an empty area)
-    t_id = _steps_completed_within_budget(hist_id["evals_cum"], budget)
-    t_fd = _steps_completed_within_budget(hist_fd["evals_cum"], budget)
-    Fid = float(y_id[-1])
-    Ffd = float(y_fd[-1])
-    dF = Fid - Ffd
-
-    txt = (fr"$B$ = {budget:.0f} evals;  $t_{{\mathrm{{ID}}}}(B)$ = {t_id}, $t_{{\mathrm{{FD}}}}(B)$ = {t_fd}"
-           "\n"
-           fr"$\hat F_{{\mathrm{{ID}}}}(B)$ = {Fid:.2f}, $\hat F_{{\mathrm{{FD}}}}(B)$ = {Ffd:.2f};  $\Delta$ = {dF:+.2f}")
-
-    ax.text(
-        0.02, 0.90, txt,
-        transform=ax.transAxes, ha="left", va="top",
-        fontsize=7,
-        bbox=dict(boxstyle="round,pad=0.25", facecolor="white", edgecolor="none", alpha=0.85),
-        zorder=10
-    )
-
-    # Legend away from the curves / annotation
+    # Legend only (no annotation to avoid overlap)
     ax.legend(loc="lower right", frameon=False)
 
     _savefig(fig, path)
@@ -350,8 +228,7 @@ def plot_evals_vs_outer(path: Path, hist_id, hist_fd, budget: float):
     """
     Fig4: Cumulative energy evaluations vs outer iteration.
 
-    Shows the per-iteration cost gap directly. We also annotate:
-      t_ID(B), t_FD(B), and the end-of-run cost ratio.
+    Shows the per-iteration cost gap directly.
     """
     set_pub_style(grid=False)
     fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
@@ -378,21 +255,6 @@ def plot_evals_vs_outer(path: Path, hist_id, hist_fd, budget: float):
     if tfd_B > 0:
         ax.scatter([tfd_B], [hist_fd["evals_cum"][tfd_B - 1]], s=18, color=COLORS["FD"],
                    edgecolors="white", linewidth=0.5, zorder=5)
-
-    ratio = float(hist_fd["evals_cum"][-1] / max(1e-12, hist_id["evals_cum"][-1]))
-
-    txt = (fr"$B$ = {budget:.0f} evals;  $t_{{\mathrm{{ID}}}}(B)$ = {tid_B}, $t_{{\mathrm{{FD}}}}(B)$ = {tfd_B}"
-           "\n"
-           fr"cost ratio $\approx$ {ratio:.2f}$\times$")
-
-    # Place annotation in bottom-right (below both lines)
-    ax.text(
-        0.98, 0.08, txt,
-        transform=ax.transAxes, ha="right", va="bottom",
-        fontsize=7,
-        bbox=dict(boxstyle="round,pad=0.25", facecolor="white", edgecolor="none", alpha=0.85),
-        zorder=10
-    )
 
     ax.set_xlabel(r"Outer iteration $t$")
     ax.set_ylabel("Energy evaluations")
@@ -444,7 +306,7 @@ def plot_xray(path: Path, lams, all_J, J_cl_star, active_ids, switch_lams, switc
             rasterized=True, label="_nolegend_")
 
     ax.plot(lams, J_cl_star, color=COLORS["ENV"], lw=2.0, ls="--",
-            label=r"Classical envelope $J_{\mathrm{cl}}^*(\lambda)$", zorder=5)
+            label=r"Envelope $J_{\mathrm{cl}}^*(\lambda)$", zorder=5)
     if switch_lams.size:
         ax.scatter(switch_lams, switch_vals, color=COLORS["ID"], s=26,
                    edgecolors="white", linewidth=0.6, label="Switch points", zorder=10)
@@ -828,7 +690,7 @@ def parse_args():
     p.add_argument("--seed", type=int, default=7)
 
     # instance / family
-    p.add_argument("--kind", type=str, default="periodic", choices=["linear", "quadratic", "periodic"])
+    p.add_argument("--kind", type=str, default="quadratic", choices=["linear", "quadratic", "periodic"])
     p.add_argument("--periodic_K", type=int, default=6)
 
     # problem size
@@ -884,7 +746,7 @@ def main():
 
     suf = f"{a.kind}_n{a.n}_seed{a.seed}"
     plot_envelope_and_expectations(out / f"envelope_expectations_{suf}.{a.fmt}",
-                                   lams, J_cl_star, hist_id, hist_fd, last_k_points=10)
+                                   lams, J_cl_star, hist_id, hist_fd)
     plot_bestJ_vs_evals(out / f"bestJ_vs_evals_{suf}.{a.fmt}", hist_id, hist_fd, J_cl_max=J_cl_max, budget=B)
     plot_evals_vs_outer(out / f"evals_vs_outer_{suf}.{a.fmt}", hist_id, hist_fd, budget=B)
     plot_lambda_trajectories(out / f"lambda_trajectories_{suf}.{a.fmt}",
