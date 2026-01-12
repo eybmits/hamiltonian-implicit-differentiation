@@ -1,0 +1,23 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+.mypy_cache/
+.pytest_cache/
+
+# Editor
+.vscode/
+.idea/
+
+# Experiment outputs
+out_*/
+experiment1/
+experiment5/
