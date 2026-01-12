@@ -20,7 +20,8 @@ What we simulate:
 
 We compare:
   - ID        : correlator-reuse implicit differentiation (CR-ImpDiff)
-  - BB-FD     : black-box finite difference on the VALUE function F(λ) (requires re-solves at λ±c)
+  - BD        : black-box finite difference on the VALUE function F(λ) (requires re-solves at λ±c)
+                (Legend label requested: "VQE + BD")
 
 Minimal paper output:
   - One 2-panel figure (Best-of-S | Mode), for the periodic family (default), aggregated over instances
@@ -28,7 +29,7 @@ Minimal paper output:
 
 Key fairness choice (matches "fixed readout shots per outer step"):
   - We apply the readout budget S ONCE PER OUTER STEP for BOTH methods, at the *center* candidate state.
-    BB-FD performs extra perturbed inner re-solves internally; we do not allocate extra readout shots to those
+    BD performs extra perturbed inner re-solves internally; we do not allocate extra readout shots to those
     perturbed solves, because the goal here is to compare "what solution do I get if I read out my current candidate
     each iteration with a fixed readout budget".
 
@@ -93,7 +94,7 @@ logging.getLogger("fontTools.subset").setLevel(logging.ERROR)
 
 COLORS = {
     "ID": "#D62728",  # red
-    "FD": "#1F77B4",  # blue
+    "FD": "#1F77B4",  # blue  (kept key name; legend label will say "BD")
     "GT": "#000000",
 }
 
@@ -199,7 +200,7 @@ def plot_2panel_iters(path: Path,
     ax = axs[0]
     ax.plot(t, mu_b_id, color=COLORS["ID"], label="VQE + ID")
     ax.fill_between(t, mu_b_id - se_b_id, mu_b_id + se_b_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
-    ax.plot(t, mu_b_fd, color=COLORS["FD"], ls="--", label="VQE + FD")
+    ax.plot(t, mu_b_fd, color=COLORS["FD"], ls="--", label="VQE + BD")
     ax.fill_between(t, mu_b_fd - se_b_fd, mu_b_fd + se_b_fd, color=COLORS["FD"], alpha=0.18, linewidth=0)
     ax.set_xlabel(r"Outer iteration $t$")
     ax.set_ylabel(r"Best-of-$S$ (best cut so far) / $J^*$")
@@ -208,7 +209,7 @@ def plot_2panel_iters(path: Path,
     ax = axs[1]
     ax.plot(t, mu_m_id, color=COLORS["ID"], label="VQE + ID")
     ax.fill_between(t, mu_m_id - se_m_id, mu_m_id + se_m_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
-    ax.plot(t, mu_m_fd, color=COLORS["FD"], ls="--", label="VQE + FD")
+    ax.plot(t, mu_m_fd, color=COLORS["FD"], ls="--", label="VQE + BD")
     ax.fill_between(t, mu_m_fd - se_m_fd, mu_m_fd + se_m_fd, color=COLORS["FD"], alpha=0.18, linewidth=0)
     ax.set_xlabel(r"Outer iteration $t$")
     ax.set_ylabel(r"Mode cut / $J^*$")
@@ -219,10 +220,10 @@ def plot_2panel_iters(path: Path,
     y1 = min(1.05, float(np.nanmax(y_all) + 0.04))
     for ax in axs:
         ax.set_ylim(y0, y1)
-    
-    # --- UPDATE: Both axes get a legend now ---
-    axs[0].legend(loc="lower right", frameon=False)
-    axs[1].legend(loc="lower right", frameon=False)
+
+    # Legend on BOTH panels (requested)
+    for ax in axs:
+        ax.legend(loc="lower right", frameon=False)
 
     _savefig(fig, path)
     plt.close(fig)
@@ -247,7 +248,7 @@ def plot_2panel_budget(path: Path,
     ax = axs[0]
     ax.plot(b, mu_b_id, color=COLORS["ID"], label="VQE + ID")
     ax.fill_between(b, mu_b_id - se_b_id, mu_b_id + se_b_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
-    ax.plot(b, mu_b_fd, color=COLORS["FD"], ls="--", label="VQE + BB-FD (re-solve)")
+    ax.plot(b, mu_b_fd, color=COLORS["FD"], ls="--", label="VQE + BD")
     ax.fill_between(b, mu_b_fd - se_b_fd, mu_b_fd + se_b_fd, color=COLORS["FD"], alpha=0.18, linewidth=0)
     ax.set_xlabel("Energy evaluations")
     ax.set_ylabel(r"Best-of-$S$ (best cut so far) / $J^*$")
@@ -256,7 +257,7 @@ def plot_2panel_budget(path: Path,
     ax = axs[1]
     ax.plot(b, mu_m_id, color=COLORS["ID"], label="VQE + ID")
     ax.fill_between(b, mu_m_id - se_m_id, mu_m_id + se_m_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
-    ax.plot(b, mu_m_fd, color=COLORS["FD"], ls="--", label="VQE + BB-FD (re-solve)")
+    ax.plot(b, mu_m_fd, color=COLORS["FD"], ls="--", label="VQE + BD")
     ax.fill_between(b, mu_m_fd - se_m_fd, mu_m_fd + se_m_fd, color=COLORS["FD"], alpha=0.18, linewidth=0)
     ax.set_xlabel("Energy evaluations")
     ax.set_ylabel(r"Mode cut / $J^*$")
@@ -268,9 +269,9 @@ def plot_2panel_budget(path: Path,
     for ax in axs:
         ax.set_ylim(y0, y1)
 
-    # --- UPDATE: Both axes get a legend now ---
-    axs[0].legend(loc="lower right", frameon=False)
-    axs[1].legend(loc="lower right", frameon=False)
+    # Legend on BOTH panels (requested)
+    for ax in axs:
+        ax.legend(loc="lower right", frameon=False)
 
     _savefig(fig, path)
     plt.close(fig)
@@ -634,10 +635,10 @@ def parse_args():
 
     # instances / seeds
     p.add_argument("--seed0", type=int, default=1)
-    p.add_argument("--num_instances", type=int, default=20)
+    p.add_argument("--num_instances", type=int, default=10)
 
     # problem
-    p.add_argument("--family", type=str, default="periodic", choices=["linear", "quadratic", "periodic"])
+    p.add_argument("--family", type=str, default="quadratic", choices=["linear", "quadratic", "periodic"])
     p.add_argument("--periodic_K", type=int, default=6)
     p.add_argument("--n", type=int, default=12)
     p.add_argument("--p_edge", type=float, default=0.45)
@@ -647,7 +648,7 @@ def parse_args():
     p.add_argument("--grid", type=int, default=401)
 
     # optimization
-    p.add_argument("--outer", type=int, default=100)
+    p.add_argument("--outer", type=int, default=30)
     p.add_argument("--inner", type=int, default=10)
     p.add_argument("--L", type=int, default=2)
     p.add_argument("--eta0", type=float, default=0.35)
@@ -656,7 +657,7 @@ def parse_args():
     p.add_argument("--c_frac", type=float, default=0.05)
 
     # readout
-    p.add_argument("--readout_shots", type=int, default=256)
+    p.add_argument("--readout_shots", type=int, default=128)
 
     # plotting axis choice
     p.add_argument("--xaxis", type=str, default="iters", choices=["iters", "budget"],
@@ -809,7 +810,7 @@ def main():
     table_csv = outdir / "table1_readout_summary.csv"
     with open(table_csv, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["metric", "ID_mean", "ID_stderr", "FD_mean", "FD_stderr"])
+        w.writerow(["metric", "ID_mean", "ID_stderr", "BD_mean", "BD_stderr"])
         for met, idm, ids, fdm, fds in summary:
             w.writerow([met, f"{idm:.6f}", f"{ids:.6f}", f"{fdm:.6f}", f"{fds:.6f}"])
 
@@ -818,7 +819,7 @@ def main():
         f.write("% Auto-generated by exp1_readout_realism_best_mode.py\n")
         f.write("\\begin{tabular}{lcc}\n")
         f.write("\\toprule\n")
-        f.write("Metric & VQE+ID & VQE+FD\\\\\n")
+        f.write("Metric & VQE+ID & VQE+BD\\\\\n")
         f.write("\\midrule\n")
         for met, idm, ids, fdm, fds in summary:
             f.write(f"{met} & {idm:.3f}$\\pm${ids:.3f} & {fdm:.3f}$\\pm${fds:.3f}\\\\\n")
@@ -829,7 +830,7 @@ def main():
     with open(txt_path, "w") as f:
         f.write(f"Experiment 1 (Readout realism) | family={a.family} | n={a.n} | N={N} | S_readout={a.readout_shots} | xaxis={a.xaxis}\n")
         for met, idm, ids, fdm, fds in summary:
-            f.write(f"{met}:  ID={idm:.4f}±{ids:.4f}  |  FD={fdm:.4f}±{fds:.4f}\n")
+            f.write(f"{met}:  ID={idm:.4f}±{ids:.4f}  |  BD={fdm:.4f}±{fds:.4f}\n")
         f.write(f"Figure: {fig_path.name}\n")
         f.write(f"Runs: {csv_path.name}\n")
 

@@ -1,0 +1,48 @@
+Experiment 2C (upgraded) | kind=quadratic | seeds=8 | budget B=155.0 evals
+Settings: eta0=0.12 eta_pow=0.6 step_clip=0.6 fd_c_frac=0.05 | readout_shots=256 | supp_shots=2,4,8,16,32,64,128
+
+Best-so-far ratios at budget B (mean ± stderr):
+  Expectation  ID(VQE):   0.6627 ± 0.0224
+  Expectation  ID(QAOA):  0.5755 ± 0.0167
+  Readout best ID(VQE):   0.8832 ± 0.0356
+  Readout best ID(QAOA):  0.8684 ± 0.0363
+
+Normalized AUC over [0,B] (mean ± stderr):
+  AUC Expectation ID(VQE):  0.4596 ± 0.0154
+  AUC Expectation ID(QAOA): 0.4527 ± 0.0132
+  AUC Readout     ID(VQE):  0.6882 ± 0.0258
+  AUC Readout     ID(QAOA): 0.6747 ± 0.0269
+
+Gaps at budget B:
+  Δ_expect = VQE - QAOA = 0.0872
+  Δ_readout= VQE - QAOA = 0.0148
+  Gap-closure from sampling = 1 - Δ_readout/Δ_expect = 0.830
+
+Tail factor (readout/expectation) at budget B:
+  tail_factor(VQE)  = 1.333
+  tail_factor(QAOA) = 1.509
+
+Tail metric: hit-rate P(cut >= (1-ε)J*) with ε=0.100
+  Tail@B ID(VQE):   0.0296 ± 0.0146
+  Tail@B ID(QAOA):  0.0027 ± 0.0014
+  AUC Tail ID(VQE): 0.0086 ± 0.0048
+  AUC Tail ID(QAOA):0.0021 ± 0.0011
+
+Readout shot sweep at budget B (best-of-S):
+  S=   2 | VQE 0.7558 ± 0.0380 | QAOA 0.7442 ± 0.0426
+  S=   4 | VQE 0.8216 ± 0.0335 | QAOA 0.7615 ± 0.0380
+  S=   8 | VQE 0.8427 ± 0.0407 | QAOA 0.7768 ± 0.0351
+  S=  16 | VQE 0.8594 ± 0.0407 | QAOA 0.8139 ± 0.0339
+  S=  32 | VQE 0.8657 ± 0.0380 | QAOA 0.8442 ± 0.0366
+  S=  64 | VQE 0.8719 ± 0.0359 | QAOA 0.8532 ± 0.0360
+  S= 128 | VQE 0.8779 ± 0.0377 | QAOA 0.8549 ± 0.0353
+  S= 256 | VQE 0.8832 ± 0.0356 | QAOA 0.8684 ± 0.0363
+
+Saved outputs:
+  - fig2C_expect_and_readout_vs_evals.pdf
+  - fig2C_tailprob_vs_evals.pdf
+  - fig2C_readout_shots_sweep.pdf
+  - fig2C_evals_vs_outer.pdf
+  - fig2C_tradeoff_scatter.pdf
+  - exp2C_results.csv
+  - exp2C_summary.txt

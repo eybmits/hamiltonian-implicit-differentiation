@@ -1,0 +1,7 @@
+Experiment 1 (Readout realism) | family=quadratic | n=12 | N=2 | S_readout=128 | xaxis=iters
+Best-of-S final / J*:  ID=0.9427±0.0563  |  FD=0.9454±0.0534
+Mode final / J*:  ID=0.7335±0.0189  |  FD=0.7572±0.0425
+Best-of-S AUC (steps):  ID=0.9003±0.0458  |  FD=0.9145±0.0459
+Mode AUC (steps):  ID=0.6490±0.0340  |  FD=0.6586±0.0131
+Figure: fig1_readout_best_mode_quadratic_n12_S128_seed01_N2_xIters.pdf
+Runs: runs1_readout_metrics.csv

@@ -990,7 +990,7 @@ def parse_args():
 
     # VQE / inner
     p.add_argument("--L", type=int, default=2)
-    p.add_argument("--inner_iters", type=int, default=28)
+    p.add_argument("--inner_iters", type=int, default=10)
     p.add_argument("--restarts", type=int, default=1)
     p.add_argument("--shots", type=int, default=0, help="shots per energy evaluation (0 = exact)")
 
@@ -1002,7 +1002,7 @@ def parse_args():
     p.add_argument("--c_frac", type=float, default=0.05)
 
     # budget + normalization scan
-    p.add_argument("--budget_evals", type=float, default=5100.0)
+    p.add_argument("--budget_evals", type=float, default=5000)
     p.add_argument("--wmax_grid", type=int, default=801, help="grid points to scan per-edge w^max for J* diagnostic")
     p.add_argument("--budget_points", type=int, default=240, help="points in shared budget grid for plotting")
 

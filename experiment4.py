@@ -707,7 +707,7 @@ def parse_args():
 
     # sweep
     p.add_argument("--K_list", type=str, default="2,3,4,5,6")
-    p.add_argument("--instances_per_K", type=int, default=8)
+    p.add_argument("--instances_per_K", type=int, default=10)
     p.add_argument("--seed", type=int, default=7)
 
     # problem size
@@ -720,7 +720,7 @@ def parse_args():
 
     # VQE / bilevel
     p.add_argument("--L", type=int, default=2)
-    p.add_argument("--inner", type=int, default=28)
+    p.add_argument("--inner", type=int, default=10)
     p.add_argument("--eta0", type=float, default=0.35)
     p.add_argument("--eta_pow", type=float, default=0.6)
     p.add_argument("--step_clip", type=float, default=0.6)
@@ -730,7 +730,7 @@ def parse_args():
     p.add_argument("--budget_evals", type=float, default=None,
                    help="common eval-budget cap (energy evals); default matches ID outer_ref*(3*inner+1)")
     p.add_argument("--id_outer_ref", type=int, default=60)
-    p.add_argument("--outer_max", type=int, default=5000)
+    p.add_argument("--outer_max", type=int, default=2000)
 
     return p.parse_args()
 

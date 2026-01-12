@@ -903,21 +903,22 @@ def plot_expect_and_readout_vs_evals(path: Path,
                                      curves_readout: Dict[str, List[Dict]],
                                      budget: float,
                                      readout_shots: int,
-                                     annotate: bool = True):
+                                     annotate: bool = False):
     """
-    Main (paper) figure: 2 panels
-      (a) expectation best-so-far vs eval budget
-      (b) sampled best-of-S best-so-far vs eval budget
+    Side-by-side (1x2) main figure:
+      left  : best-so-far expectation (J/J*)
+      right : best-so-far sampled cut (best-of-S, /J*)
+    No panel labels (a/b). No extra annotation text boxes. Legend only once.
     """
     set_pub_style(grid=False)
 
-    fig_h = 5.25  # compact 2-panel single-column figure
-    fig, (ax1, ax2) = plt.subplots(
-        2, 1, figsize=(COL_W, fig_h), sharex=True, constrained_layout=True
-    )
+    # two-column width for side-by-side
+    FULL_W = 6.95   # inches
+    H = H_COL       # keep your single-panel height
 
-    _panel_label(ax1, "a")
-    _panel_label(ax2, "b")
+    fig, (ax1, ax2) = plt.subplots(
+        1, 2, figsize=(FULL_W, H), constrained_layout=True
+    )
 
     E = np.linspace(0.0, float(budget), 320)
 
@@ -938,45 +939,28 @@ def plot_expect_and_readout_vs_evals(path: Path,
         ax.plot(E, mu, color=color, lw=1.8, ls=ls, label=label, zorder=z)
         ax.fill_between(E, mu - se, mu + se, color=color, alpha=alpha_fill, lw=0, zorder=z - 1)
 
-    # Top: expectation
-    draw(ax1, stats_exp, "VQE", COLORS["VQE"], "-", "ID(VQE)", 0.12, z=3)
-    draw(ax1, stats_exp, "QAOA", COLORS["QAOA"], "--", r"ID(QAOA, full $\partial_\lambda J$)", 0.10, z=4)
+    # Left: expectation
+    draw(ax1, stats_exp, "VQE",  COLORS["VQE"],  "-",  "_nolegend_", 0.12, z=3)
+    draw(ax1, stats_exp, "QAOA", COLORS["QAOA"], "--", "_nolegend_", 0.10, z=4)
     ax1.set_ylabel(r"Best-so-far expectation $J/J^*$")
 
-    # Bottom: readout best-of-S
-    draw(ax2, stats_ro, "VQE", COLORS["VQE"], "-", "ID(VQE)", 0.12, z=3)
+    # Right: readout
+    draw(ax2, stats_ro, "VQE",  COLORS["VQE"],  "-",  "ID(VQE)", 0.12, z=3)
     draw(ax2, stats_ro, "QAOA", COLORS["QAOA"], "--", r"ID(QAOA, full $\partial_\lambda J$)", 0.10, z=4)
     ax2.set_ylabel(r"Best sampled cut $/J^*$")
     ax2.set_xlabel("Energy evaluations")
 
+    # Limits
     for ax, stats in [(ax1, stats_exp), (ax2, stats_ro)]:
         ax.set_xlim(0.0, float(budget))
         mus = [v[0] for v in stats.values()]
         y_max = float(np.max(np.vstack(mus))) if mus else 1.0
         ax.set_ylim(0.0, min(1.25, max(0.65, y_max * 1.10)))
 
-    # Legend only once (top)
-    leg = ax1.legend(loc="lower right", frameon=True, fancybox=False, framealpha=0.88)
+    # Legend only once (right panel)
+    leg = ax2.legend(loc="lower right", frameon=True, fancybox=False, framealpha=0.88)
     leg.get_frame().set_linewidth(0.0)
     leg.get_frame().set_facecolor("white")
-
-    # Readout annotation
-    ax2.text(0.02, 0.98, f"Readout: S={int(readout_shots)} shots/outer step",
-             transform=ax2.transAxes, va="top", ha="left",
-             bbox=dict(facecolor="white", edgecolor="none", alpha=0.88, pad=1.6))
-
-    if annotate:
-        vqe_end = float(stats_exp["VQE"][0][-1])
-        qaoa_end = float(stats_exp["QAOA"][0][-1])
-        ax1.text(0.02, 0.98, f"Exp@B: VQE={vqe_end:.3f} | QAOA={qaoa_end:.3f}",
-                 transform=ax1.transAxes, va="top", ha="left",
-                 bbox=dict(facecolor="white", edgecolor="none", alpha=0.88, pad=1.6))
-
-        vqe_ro = float(stats_ro["VQE"][0][-1])
-        qaoa_ro = float(stats_ro["QAOA"][0][-1])
-        ax2.text(0.02, 0.83, f"Readout@B: VQE={vqe_ro:.3f} | QAOA={qaoa_ro:.3f}",
-                 transform=ax2.transAxes, va="top", ha="left",
-                 bbox=dict(facecolor="white", edgecolor="none", alpha=0.88, pad=1.6))
 
     _savefig(fig, path)
 
@@ -1164,7 +1148,7 @@ def parse_args():
     p.add_argument("--p_edge", type=float, default=0.45)
 
     # family
-    p.add_argument("--kind", type=str, default="periodic", choices=["linear", "quadratic", "periodic"])
+    p.add_argument("--kind", type=str, default="quadratic", choices=["linear", "quadratic", "periodic"])
     p.add_argument("--periodic_K", type=int, default=6)
     p.add_argument("--lam_min", type=float, default=-5.0)
     p.add_argument("--lam_max", type=float, default=5.0)
@@ -1176,8 +1160,8 @@ def parse_args():
     p.add_argument("--p_qaoa", type=int, default=3)
 
     # budgets
-    p.add_argument("--outer", type=int, default=60)
-    p.add_argument("--inner", type=int, default=28)
+    p.add_argument("--outer", type=int, default=5)
+    p.add_argument("--inner", type=int, default=10)
 
     # outer schedule
     p.add_argument("--eta0", type=float, default=0.12)
@@ -1190,7 +1174,7 @@ def parse_args():
     # readout realism
     p.add_argument("--readout_shots", type=int, default=256,
                    help="Main readout budget S per outer step for the main 2-panel figure.")
-    p.add_argument("--supp_shots", type=str, default="16,32,64",
+    p.add_argument("--supp_shots", type=str, default="2,4,8,16,32,64,128",
                    help="Comma-separated additional shot budgets for a sweep plot (supplement). "
                         "Set to '' to disable.")
 

@@ -1,0 +1,7 @@
+family,shots,budget,ID_mean,ID_stderr,FD_mean,FD_stderr
+linear,exact,2000,0.8000,0.0014,0.8142,0.0176
+linear,256,2000,0.7989,0.0054,0.7843,0.0123
+quadratic,exact,2000,0.8108,0.0561,0.8300,0.0300
+quadratic,256,2000,0.8279,0.0480,0.7865,0.0704
+periodic,exact,2000,0.7854,0.0252,0.7673,0.0218
+periodic,256,2000,0.7758,0.0206,0.7546,0.0375

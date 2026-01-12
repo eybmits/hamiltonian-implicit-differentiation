@@ -366,7 +366,7 @@ def plot_trajectory_improved(path: Path, hist_id, hist_fd, lam_true, lam_bounds)
     ax.set_xlabel("Outer iteration $t$")
     ax.set_ylabel(r"Parameter $\lambda_t$")
     # Legend with 2 columns to fit 'Start' nicely
-    ax.legend(loc="lower right", frameon=False, ncol=2)
+    ax.legend(loc="upper right", frameon=False, ncol=2)
     _savefig(fig, path); plt.close(fig)
 
 
@@ -576,10 +576,10 @@ def main():
     p.add_argument("--out", type=str, default="experiment_final")
     p.add_argument("--fmt", type=str, default="pdf")
     p.add_argument("--seed", type=int, default=7)
-    p.add_argument("--kind", type=str, default="linear")
+    p.add_argument("--kind", type=str, default="quadratic")
     p.add_argument("--periodic_K", type=int, default=6)
     p.add_argument("--n", type=int, default=12)
-    p.add_argument("--outer", type=int, default=200)
+    p.add_argument("--outer", type=int, default=100)
     p.add_argument("--inner", type=int, default=30)
     p.add_argument("--L", type=int, default=2)
     p.add_argument("--eta0", type=float, default=0.35)
@@ -604,8 +604,8 @@ def main():
     J_max = float(np.max(J_star))
 
     print("Running ID vs FD...")
-    h_id = run_outer(args.n, edges, Z, fam, mask, 0, args.outer, args.inner, args.L, args.seed, args.eta0, args.eta_pow, args.step_clip, "ID", args.readout_shots, args.c_frac)
-    h_fd = run_outer(args.n, edges, Z, fam, mask, 0, args.outer, args.inner, args.L, args.seed, args.eta0, args.eta_pow, args.step_clip, "FD_VALUE", args.readout_shots, args.c_frac)
+    h_id = run_outer(args.n, edges, Z, fam, mask, 4, args.outer, args.inner, args.L, args.seed, args.eta0, args.eta_pow, args.step_clip, "ID", args.readout_shots, args.c_frac)
+    h_fd = run_outer(args.n, edges, Z, fam, mask, 4, args.outer, args.inner, args.L, args.seed, args.eta0, args.eta_pow, args.step_clip, "FD_VALUE", args.readout_shots, args.c_frac)
 
     B = float(args.budget_evals) if args.budget_evals is not None else float(h_id["evals_cum"][-1])
     suf = f"{args.kind}_n{args.n}_seed{args.seed}"

@@ -1,0 +1,5 @@
+metric,ID_mean,ID_stderr,FD_mean,FD_stderr
+Best-of-S final / J*,0.942708,0.056258,0.945390,0.053369
+Mode final / J*,0.733529,0.018884,0.757176,0.042494
+Best-of-S AUC (steps),0.900296,0.045814,0.914501,0.045895
+Mode AUC (steps),0.649019,0.033970,0.658629,0.013072
