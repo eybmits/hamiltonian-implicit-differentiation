@@ -635,7 +635,7 @@ def parse_args():
 
     # instances / seeds
     p.add_argument("--seed0", type=int, default=1)
-    p.add_argument("--num_instances", type=int, default=10)
+    p.add_argument("--num_instances", type=int, default=20)
 
     # problem
     p.add_argument("--family", type=str, default="quadratic", choices=["linear", "quadratic", "periodic"])
@@ -644,7 +644,7 @@ def parse_args():
     p.add_argument("--p_edge", type=float, default=0.45)
     p.add_argument("--lam_min", type=float, default=-5.0)
     p.add_argument("--lam_max", type=float, default=5.0)
-    p.add_argument("--lam0", type=float, default=0.8)
+    p.add_argument("--lam0", type=float, default=4)
     p.add_argument("--grid", type=int, default=401)
 
     # optimization

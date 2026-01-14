@@ -1,86 +1,95 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-exp2C_vqe_vs_qaoa_readout_pubplots_upgraded.py
-=============================================
+exp7_edgewise_lambda_vector.py
+==============================
 
-Experiment 2C (Readout bridge, upgraded): VQE vs QAOA under a matched outer protocol,
-and how expectation improvements translate to sampled solutions
-----------------------------------------------------------------------------------
+Experiment 7 (Main / Supplement): Edge-wise outer parameters (vector λ)
+-----------------------------------------------------------------------
 
-Paper story (why this exists)
-  In Exp. 2A we compare bilevel outer-optimization performance across ansätze.
-  But in combinatorial optimization we ultimately care about sampling *good bitstrings*
-  with a finite readout budget.
+Goal
+----
+Generalize the outer control from a single scalar λ to a vector of per-edge controls
 
-  This script is the "readout realism" bridge (cf. your Experiment 3):
-    - Track best-so-far expectation value along the outer trajectory
-    - Track best-so-far sampled solution quality along the same trajectory
-      under a fixed readout shot budget S per outer step.
+    λ = (λ_e)_{e∈E},   with   H(λ) = Σ_{e∈E} w_e(λ_e) P_e,  P_e=(I - Z_i Z_j)/2.
 
-  Optional (recommended for rebuttal / supplement):
-    - Track a tail metric that saturates much more slowly than best-of-256, e.g.
-        Hit-rate:   P(sample >= (1-ε) J*)
-      or
-        Top-k tail: P(sample is in top-k% of bitstrings by cut value).
+We test whether the correlator-reuse implicit differentiation (CR-ImpDiff / "ID")
+advantage persists in this higher-dimensional outer problem under matched
+evaluation budgets.
 
-Correct bilevel / hypergradient choices (minimal but correct)
-  We optimize the value function F(λ)=max_ϑ J(ϑ,λ) via an outer update in λ.
-  At an inner optimum ϑ*(λ), the envelope theorem gives:
-      dF/dλ = ∂_λ J(ϑ*(λ), λ).
+Key objects (aligned with the manuscript)
+----------------------------------------
+Inner objective:
+  J(φ, λ_vec) = ⟨H(λ_vec)⟩_φ = Σ_e w_e(λ_e) p_e(φ),    p_e=(1-⟨Z_i Z_j⟩)/2 ∈ [0,1].
 
-  VQE (λ-independent state at fixed parameters)
-      |ψ_VQE(ϕ)⟩ does not depend on λ  ⇒  ∂_λ J is exactly the "reuse term"
-          ∂_λ J = Σ_e w'_e(λ) p_e(ϕ)
-      and can be computed without extra objective probes.
+Bilevel value function (target):
+  F(λ_vec) = max_φ J(φ, λ_vec).
 
-  QAOA (problem-dependent state)
-      |ψ_QAOA(θ,λ)⟩ depends on λ via the cost unitary U_C(λ)=exp(-i γ H_C(λ)).
-      Therefore ∂_λ J includes an additional state-dependence term.
-      Here we use the *safe* option for QAOA:
-          ∂_λ J(θ*,λ) ≈ [J(θ*,λ+c) - J(θ*,λ-c)] / (2c),
-      i.e. fixed-θ central finite differences (2 extra objective calls per outer step).
+Methods (outer direction only differs; same outer update rule)
+--------------------------------------------------------------
+(1) ID / CR-ImpDiff (envelope / partial derivative signal)
+    After ONE inner solve at current λ_vec:
+        g_ID,e = ∂J/∂λ_e = w'_e(λ_e) * p_e
+    i.e. the full gradient vector is obtained by reusing the same ZZ correlators
+    already needed for J. (Negligible additional quantum measurement cost.)
 
-What we report (paper-friendly)
-  Main figure (single column, two panels; vs ENERGY EVALUATION BUDGET):
-    (a) best-so-far expectation (normalized by J*)
-    (b) best-so-far sampled cut (best-of-S readout, normalized by J*)
+(2) Black-box bilevel baseline in high dimension: SPSA finite difference on F
+    Use a Rademacher direction Δ ∈ {±1}^m:
+        g_FD = [F(λ_vec + cΔ) - F(λ_vec - cΔ)]/(2c) * Δ
+    Each F(·) query requires an additional inner re-solve at the perturbed λ.
+    Thus FD costs ~3 inner solves per outer step (center + plus + minus).
 
-  Optional figures:
-    - Tail probability vs budget (hit-rate or top-k)
-    - Readout shot sweep at fixed budget B (best-of-S for S in {16,32,64,256,...})
-    - Cost plot: cumulative energy evaluations vs outer step
-    - Tradeoff scatter at budget B with y=x diagonal:
-        "above diagonal" = stronger tail advantage (sampling closes expectation gap)
+Fairness / cost model
+---------------------
+- We compare at a fixed total evaluation budget B (energy evaluations).
+- For FD, best-so-far is computed over ALL value queries it actually makes
+  (center, plus, minus). We do not discard evaluated candidates.
+- We report performance as best-so-far value vs cumulative energy evaluations,
+  and as normalized AUC_B over [0,B].
 
-Outputs (in --out folder)
-  - fig2C_expect_and_readout_vs_evals.<fmt>
-  - fig2C_tailprob_vs_evals.<fmt>                (if --tail_metric != none)
-  - fig2C_readout_shots_sweep.<fmt>              (if --supp_shots not empty)
-  - fig2C_evals_vs_outer.<fmt>                   (can disable with --no_cost_plot)
-  - fig2C_tradeoff_scatter.<fmt>                 (can disable with --no_tradeoff_plot)
-  - exp2C_results.csv
-  - exp2C_summary.txt
+Normalization J*
+----------------
+In the edge-wise setting with positive weights, an informative diagnostic scale is:
+  w_e^max = max_{λ∈[λmin,λmax]} w_e(λ)   (independent per edge),
+  J* = max_{z∈{0,1}^n} Σ_e w_e^max * I{edge e cut by z}.
+We compute w^max by scanning a λ-grid and compute J* by enumerating all 2^n bitstrings
+(feasible for n<=12). J* is used only for normalization/diagnostics.
+
+Outputs (paper-ready)
+---------------------
+Saved in --out directory:
+  - fig7_edgewise_budget_gain_<suffix>.<fmt>
+      2-panel figure: (a) best-so-far / J* vs evaluations (mean±stderr),
+                      (b) per-instance ΔAUC_B vs |E| (scatter only; no extra text).
+  - fig7_edgewise_steps_<suffix>.<fmt>
+      Bar chart: outer steps completed within budget B (mean±stderr).
+  - runs7_edgewise_metrics.csv
+      Per-instance metrics (AUC, final best at budget, steps, costs, etc.).
+  - table7_edgewise_summary.csv / .tex
+      Mean±stderr summary across instances.
+  - exp7_edgewise_summary.txt
+      Compact copy/paste summary.
 
 Example
-  python exp2C_vqe_vs_qaoa_readout_pubplots_upgraded.py \
-    --kind periodic --periodic_K 6 --seeds 7,8,9,10,11,12,13,14 \
-    --readout_shots 256 --supp_shots 16,32,64 \
-    --tail_metric hit --hit_eps 0.10 \
-    --fmt pdf
+-------
+python exp7_edgewise_lambda_vector.py \
+  --family periodic --periodic_K 6 \
+  --n 12 --p_edge 0.45 \
+  --inner_iters 28 --restarts 1 --L 2 \
+  --budget_evals 5100 \
+  --num_instances 20 \
+  --shots 0 \
+  --fmt pdf --out out_exp7
 
-Notes
-  - Inner solver: SPSA uses 3 objective calls per iteration (Ep, Em, E).
-  - Readout shots are NOT counted as "energy evaluations" (budget-first framing).
 """
 
 import math
 import argparse
+import csv
 import warnings
 import logging
-import csv
 from pathlib import Path
-from typing import Tuple, Dict, List, Optional
+from typing import Tuple, List, Dict, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -88,10 +97,11 @@ import matplotlib as mpl
 
 
 # ------------------------------------------------------------------------------
-# Silence known noisy-but-harmless messages (fontTools uses logging)
+# Silence noisy-but-harmless fontTools PDF logs and a few numpy warnings
 # ------------------------------------------------------------------------------
 warnings.filterwarnings("ignore", message=".*timestamp seems very low.*")
 warnings.filterwarnings("ignore", message=".*regarding as unix timestamp.*")
+warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*encountered in matmul.*")
 
 _ft = logging.getLogger("fontTools")
 _ft.setLevel(logging.ERROR)
@@ -103,20 +113,18 @@ logging.getLogger("fontTools.subset").setLevel(logging.ERROR)
 
 
 # ==============================================================================
-# 1) Minimal NPJ/Nature-ish plotting
+# 1) Paper-ish plotting style (NPJ/Nature-ish)
 # ==============================================================================
 
 COLORS = {
-    "VQE":  "#D62728",  # red
-    "QAOA": "#1F77B4",  # blue
+    "ID":  "#D62728",  # red
+    "FD":  "#1F77B4",  # blue
+    "GT":  "#000000",
 }
 
-COL_W = 3.37   # inches (single-column)
-H_COL = 2.8    # inches
-
-
-def fig_size() -> Tuple[float, float]:
-    return (COL_W, H_COL)
+FULL_W = 6.95
+H_TWO = 2.6
+COL_W = 3.37
 
 
 def set_pub_style(grid: bool = False):
@@ -131,7 +139,7 @@ def set_pub_style(grid: bool = False):
         "ytick.labelsize": 8,
         "mathtext.fontset": "cm",
         "axes.formatter.use_mathtext": True,
-        "lines.linewidth": 1.5,
+        "lines.linewidth": 1.6,
         "xtick.direction": "in",
         "ytick.direction": "in",
         "xtick.top": True,
@@ -162,108 +170,147 @@ def _savefig(fig: plt.Figure, path: Path):
         fig.savefig(path, dpi=600)
     else:
         fig.savefig(path)
+
+
+def _mean_stderr(x: np.ndarray, axis: int = 0):
+    x = np.asarray(x, float)
+    mu = np.nanmean(x, axis=axis)
+    sd = np.nanstd(x, axis=axis, ddof=1)
+    n = np.sum(np.isfinite(x), axis=axis)
+    se = sd / np.sqrt(np.maximum(1, n))
+    return mu, se
+
+
+def _step_interp(evals: np.ndarray, vals: np.ndarray, grid: np.ndarray) -> np.ndarray:
+    """
+    Piecewise-constant interpolation (step function):
+      y(b) = last observed value with eval <= b.
+    """
+    evals = np.asarray(evals, float)
+    vals = np.asarray(vals, float)
+    grid = np.asarray(grid, float)
+
+    if evals.size == 0:
+        return np.full_like(grid, np.nan, dtype=float)
+
+    order = np.argsort(evals)
+    evals = evals[order]
+    vals = vals[order]
+
+    # Anchor at budget 0
+    if evals[0] > 0.0:
+        evals = np.concatenate([[0.0], evals])
+        vals = np.concatenate([[vals[0]], vals])
+    else:
+        evals[0] = 0.0
+
+    idx = np.searchsorted(evals, grid, side="right") - 1
+    idx = np.clip(idx, 0, vals.size - 1)
+    return vals[idx]
+
+
+def plot_2panel_budget_and_gain(
+    path: Path,
+    budget_grid: np.ndarray,
+    best_id_grid: np.ndarray,
+    best_fd_grid: np.ndarray,
+    auc_gain: np.ndarray,
+    m_edges: np.ndarray,
+    budget_evals: float,
+):
+    """
+    Two-panel, paper-ready figure:
+      left: mean±stderr best-so-far / J* vs evaluation budget (step-interp grid)
+      right: per-instance ΔAUC_B vs |E| (scatter only; no extra annotation)
+
+    best_*_grid: (N, G)
+    """
+    set_pub_style(grid=False)
+    b = np.asarray(budget_grid, float)
+
+    mu_id, se_id = _mean_stderr(best_id_grid, axis=0)
+    mu_fd, se_fd = _mean_stderr(best_fd_grid, axis=0)
+
+    fig, axs = plt.subplots(1, 2, figsize=(FULL_W, H_TWO), constrained_layout=True)
+
+    # Left panel: Budget curves
+    ax = axs[0]
+    ax.plot(b, mu_id, color=COLORS["ID"], label="VQE + ID")
+    ax.fill_between(b, mu_id - se_id, mu_id + se_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
+    ax.plot(b, mu_fd, color=COLORS["FD"], ls="--", label="VQE + FD")
+    ax.fill_between(b, mu_fd - se_fd, mu_fd + se_fd, color=COLORS["FD"], alpha=0.18, linewidth=0)
+    ax.set_xlabel("Energy evaluations")
+    ax.set_ylabel(r"Best-so-far $\hat F / J^*$")
+    ax.set_xlim(float(b[0]), float(b[-1]))
+    y_all = np.concatenate([mu_id, mu_fd])
+    y0 = max(0.0, float(np.nanmin(y_all) - 0.04))
+    y1 = min(1.05, float(np.nanmax(y_all) + 0.04))
+    ax.set_ylim(y0, y1)
+    ax.legend(loc="lower right", frameon=False)
+
+    # Right panel: ΔAUC vs |E|
+    ax = axs[1]
+    x = np.asarray(m_edges, float)
+    y = np.asarray(auc_gain, float)
+
+    ax.axhline(0.0, color=COLORS["GT"], lw=1.0, ls=":")
+    ax.scatter(x, y, s=22, color="#666666", alpha=0.75, edgecolors="none")
+
+    ax.set_xlabel(r"Number of edges $|E|$")
+    ax.set_ylabel(r"$\Delta \mathrm{AUC}_B$ (ID $-$ FD)")
+
+    _savefig(fig, path)
     plt.close(fig)
 
 
-def _panel_label(ax: plt.Axes, label: str):
-    ax.text(0.00, 1.02, label, transform=ax.transAxes,
-            va="bottom", ha="left", fontsize=9, fontweight="bold")
+def plot_steps_bar(
+    path: Path,
+    steps_id: np.ndarray,
+    steps_fd: np.ndarray,
+):
+    """
+    Bar chart: outer steps completed within budget B (mean±stderr).
+    """
+    set_pub_style(grid=False)
+    fig, ax = plt.subplots(figsize=(COL_W, H_TWO), constrained_layout=True)
+
+    sid = np.asarray(steps_id, float)
+    sfd = np.asarray(steps_fd, float)
+
+    mu_id = float(np.nanmean(sid))
+    mu_fd = float(np.nanmean(sfd))
+    se_id = float(np.nanstd(sid, ddof=1) / math.sqrt(max(1, np.sum(np.isfinite(sid))))) if np.sum(np.isfinite(sid)) > 1 else float("nan")
+    se_fd = float(np.nanstd(sfd, ddof=1) / math.sqrt(max(1, np.sum(np.isfinite(sfd))))) if np.sum(np.isfinite(sfd)) > 1 else float("nan")
+
+    xs = np.array([0, 1], int)
+    mus = np.array([mu_id, mu_fd], float)
+    ses = np.array([se_id, se_fd], float)
+
+    ax.bar(xs, mus, yerr=ses, capsize=3, width=0.6,
+           color=["#dddddd", "#dddddd"], edgecolor=["#444444", "#444444"])
+    ax.scatter([0], [mu_id], color=COLORS["ID"], s=26, zorder=5, edgecolors="white", linewidth=0.5)
+    ax.scatter([1], [mu_fd], color=COLORS["FD"], s=26, zorder=5, edgecolors="white", linewidth=0.5)
+
+    ax.set_xticks(xs)
+    ax.set_xticklabels(["ID", "FD"])
+    ax.set_ylabel(r"Outer steps within budget $B$")
+    ax.set_xlim(-0.6, 1.6)
+
+    ratio = mu_id / max(1e-12, mu_fd)
+    ax.text(0.5, 0.98, fr"steps ratio $\approx$ {ratio:.2f}$\times$",
+            transform=ax.transAxes, ha="center", va="top", fontsize=7)
+
+    _savefig(fig, path)
+    plt.close(fig)
 
 
 # ==============================================================================
-# 2) Utilities
+# 2) Utilities: instance generation and bitstring precomputations
 # ==============================================================================
 
 def to_uint_seed(seed: int) -> int:
     return int(seed) % (2**32 - 1)
 
-
-def parse_int_list(s: str) -> List[int]:
-    s = (s or "").strip()
-    if not s:
-        return []
-    out = []
-    for chunk in s.split(","):
-        chunk = chunk.strip()
-        if chunk:
-            out.append(int(chunk))
-    return out
-
-
-def step_sample(evals: np.ndarray, y_step: np.ndarray, grid: np.ndarray) -> np.ndarray:
-    """
-    Sample a step function y(evals) on a grid.
-    For grid < evals[0], output 0.
-    """
-    evals = np.asarray(evals, float)
-    y_step = np.asarray(y_step, float)
-    grid = np.asarray(grid, float)
-    if evals.size == 0:
-        return np.zeros_like(grid)
-    idx = np.searchsorted(evals, grid, side="right") - 1
-    out = np.zeros_like(grid, dtype=float)
-    m = idx >= 0
-    out[m] = y_step[idx[m]]
-    return out
-
-
-def step_value_at(evals: np.ndarray, y_step: np.ndarray, x: float) -> float:
-    evals = np.asarray(evals, float)
-    y_step = np.asarray(y_step, float)
-    if evals.size == 0:
-        return 0.0
-    idx = np.searchsorted(evals, float(x), side="right") - 1
-    if idx < 0:
-        return 0.0
-    return float(y_step[idx])
-
-
-def step_auc(evals: np.ndarray, y_step: np.ndarray, x_max: float) -> float:
-    """
-    AUC of a step function y(evals) over [0, x_max] (piecewise-constant, right-continuous).
-    """
-    evals = np.asarray(evals, float)
-    y_step = np.asarray(y_step, float)
-    x_max = float(x_max)
-
-    if evals.size == 0 or x_max <= 0:
-        return 0.0
-
-    area = 0.0
-    prev_x = 0.0
-    prev_y = 0.0
-
-    for x, y in zip(evals, y_step):
-        x = float(min(x, x_max))
-        if x <= prev_x:
-            prev_y = float(y)
-            continue
-        area += (x - prev_x) * prev_y
-        prev_x = x
-        prev_y = float(y)
-        if prev_x >= x_max:
-            break
-
-    if prev_x < x_max:
-        area += (x_max - prev_x) * prev_y
-    return float(area)
-
-
-def write_csv(path: Path, rows: List[Dict]):
-    if not rows:
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    keys = list(rows[0].keys())
-    with open(path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=keys)
-        w.writeheader()
-        for r in rows:
-            w.writerow(r)
-
-
-# ==============================================================================
-# 3) Instance generation + parameter family
-# ==============================================================================
 
 def generate_random_graph(n: int, p_edge: float, rng: np.random.Generator):
     edges = []
@@ -275,7 +322,9 @@ def generate_random_graph(n: int, p_edge: float, rng: np.random.Generator):
 
 
 def precompute_z_big_endian(n: int) -> np.ndarray:
-    """Z[q, x] = ±1 eigenvalue of Z on qubit q for computational basis state index x."""
+    """
+    Z[q, state] ∈ {+1,-1} for big-endian ordering.
+    """
     K = 1 << n
     idx = np.arange(K, dtype=np.uint32)
     Z = np.empty((n, K), dtype=np.int8)
@@ -287,9 +336,9 @@ def precompute_z_big_endian(n: int) -> np.ndarray:
 
 def build_cut_mask(edges, Z: np.ndarray) -> np.ndarray:
     """
-    cut_mask[x, e] = 1 if edge e is cut by bitstring x, else 0.
+    cut_mask[state, e] = (1 - Z_i Z_j)/2 ∈ {0,1}
     """
-    K = Z.shape[1]
+    _, K = Z.shape
     m = len(edges)
     cut = np.empty((K, m), dtype=np.float64)
     for e, (i, j) in enumerate(edges):
@@ -297,13 +346,36 @@ def build_cut_mask(edges, Z: np.ndarray) -> np.ndarray:
     return cut
 
 
-class Family1D:
+def build_ZZ_edges(edges, Z: np.ndarray) -> np.ndarray:
     """
-    w_e(λ) = w̄_e + A_e f_e(x), x = 2(λ-mid)/Δ ∈ [-1,1]
-    with mean-zero RMS-normalized f_e.
+    ZZ[e, state] = Z_i(state) * Z_j(state) ∈ {+1,-1}
+    """
+    _, K = Z.shape
+    m = len(edges)
+    ZZ = np.empty((m, K), dtype=np.int8)
+    for e, (i, j) in enumerate(edges):
+        ZZ[e] = (Z[i] * Z[j]).astype(np.int8)
+    return ZZ
 
-    Supported:
-      linear, quadratic, periodic (cosine with random phase & frequency).
+
+# ==============================================================================
+# 3) Edge-wise parametric family: w_e(λ_e)
+# ==============================================================================
+
+class FamilyEdgeWise:
+    """
+    Edge-wise parametric coupling family.
+
+    For each edge e:
+      w_e(λ_e) = wbar_e + A_e * f_e(x(λ_e))
+    with x(λ) = 2(λ - mid)/Δ ∈ [-1,1].
+
+    Canonical shapes (mean-zero, unit-RMS under x~Unif[-1,1]):
+      linear:     f = √3 s x
+      quadratic:  f = √(45/4) s (x^2 - 1/3)
+      periodic:   f = √2 cos(π k x + φ),    k∈{1,...,K}
+
+    Important: This class is "edge-wise": λ is a vector of shape (m,).
     """
     def __init__(self, m: int, kind: str, lam_bounds: Tuple[float, float],
                  rng: np.random.Generator, K: int = 6):
@@ -313,6 +385,7 @@ class Family1D:
         self.Delta = max(1e-12, self.lam_max - self.lam_min)
         self.dx_dlam = 2.0 / self.Delta
 
+        # positive baseline + moderate amplitude
         self.wbar = rng.uniform(2.0, 3.0, size=m).astype(float)
         self.A = rng.uniform(0.3, 0.8, size=m).astype(float)
 
@@ -321,45 +394,91 @@ class Family1D:
             self.k = None
             self.phi = None
         elif self.kind == "periodic":
-            self.k = rng.integers(1, int(K) + 1, size=m).astype(float)
-            self.phi = rng.uniform(0.0, 2 * np.pi, size=m).astype(float)
             self.s = None
+            self.k = rng.integers(1, K + 1, size=m).astype(float)
+            self.phi = rng.uniform(0.0, 2*np.pi, size=m).astype(float)
         else:
-            raise ValueError("kind must be linear|quadratic|periodic")
+            raise ValueError("family kind must be linear, quadratic, or periodic")
 
-    def x(self, lam: float) -> float:
-        return 2.0 * (float(lam) - self.mid) / self.Delta
+    def x(self, lam_vec: np.ndarray) -> np.ndarray:
+        lam_vec = np.asarray(lam_vec, float)
+        return 2.0 * (lam_vec - self.mid) / self.Delta
 
-    def f_df(self, x: float):
-        x = float(x)
+    def f_df(self, x: np.ndarray):
+        x = np.asarray(x, float)
         if self.kind == "linear":
             c = math.sqrt(3.0)
             f = c * self.s * x
-            df = c * self.s
+            df = c * self.s * np.ones_like(x)
         elif self.kind == "quadratic":
             c = math.sqrt(45.0 / 4.0)
-            f = c * self.s * (x * x - 1.0 / 3.0)
+            f = c * self.s * (x*x - 1.0/3.0)
             df = c * self.s * (2.0 * x)
-        else:  # periodic
+        else:
             c = math.sqrt(2.0)
             arg = math.pi * self.k * x + self.phi
             f = c * np.cos(arg)
             df = c * (-math.pi * self.k) * np.sin(arg)
         return f, df
 
-    def w(self, lam: float) -> np.ndarray:
-        f, _ = self.f_df(self.x(lam))
+    def w(self, lam_vec: np.ndarray) -> np.ndarray:
+        f, _ = self.f_df(self.x(lam_vec))
         w = self.wbar + self.A * f
-        return np.nan_to_num(w, nan=0.0, posinf=0.0, neginf=0.0).astype(float)
+        w = np.nan_to_num(w, nan=0.0, posinf=0.0, neginf=0.0)
+        return w.astype(float)
 
-    def dw_dlam(self, lam: float) -> np.ndarray:
-        _, df = self.f_df(self.x(lam))
+    def dw_dlam(self, lam_vec: np.ndarray) -> np.ndarray:
+        _, df = self.f_df(self.x(lam_vec))
         dw = self.A * df * self.dx_dlam
-        return np.nan_to_num(dw, nan=0.0, posinf=0.0, neginf=0.0).astype(float)
+        dw = np.nan_to_num(dw, nan=0.0, posinf=0.0, neginf=0.0)
+        return dw.astype(float)
+
+    def w_max(self, grid_points: int = 801) -> np.ndarray:
+        """
+        Per-edge maximum weight w_e^max over λ ∈ [λmin, λmax], found by grid scan.
+        This is used only for diagnostic normalization J*.
+        """
+        lams = np.linspace(self.lam_min, self.lam_max, int(grid_points), dtype=float)
+        x = 2.0 * (lams - self.mid) / self.Delta  # shape (G,)
+
+        if self.kind == "linear":
+            c = math.sqrt(3.0)
+            # f_e(x) = c*s_e*x -> max over x in [-1,1] is c*|s| = c
+            f_max = c * np.ones_like(self.wbar)
+        elif self.kind == "quadratic":
+            # safer to grid over x: x∈[-1,1]
+            X = x[None, :]  # (1,G)
+            c = math.sqrt(45.0 / 4.0)
+            f_grid = c * self.s[:, None] * (X*X - 1.0/3.0)  # (m,G)
+            f_max = np.max(f_grid, axis=1)
+        else:
+            # periodic: grid scan in x-space (covers full periods because x∈[-1,1])
+            X = x[None, :]  # (1,G)
+            c = math.sqrt(2.0)
+            arg = math.pi * self.k[:, None] * X + self.phi[:, None]
+            f_grid = c * np.cos(arg)  # (m,G)
+            f_max = np.max(f_grid, axis=1)
+
+        wmax = self.wbar + self.A * f_max
+        wmax = np.nan_to_num(wmax, nan=0.0, posinf=0.0, neginf=0.0)
+        return wmax.astype(float)
+
+
+def classical_Jstar_from_wmax(cut_mask: np.ndarray, wmax: np.ndarray) -> float:
+    """
+    J* = max_z (cut_mask[z] @ wmax), enumerating all 2^n bitstrings.
+    """
+    with np.errstate(all="ignore"):
+        vals = cut_mask @ wmax.astype(np.float64)
+    vals = np.nan_to_num(vals, nan=-1e30, posinf=-1e30, neginf=-1e30)
+    Jstar = float(np.max(vals))
+    if (not np.isfinite(Jstar)) or Jstar <= 0.0:
+        Jstar = 1.0
+    return Jstar
 
 
 # ==============================================================================
-# 4) Statevector simulator primitives
+# 4) VQE simulator (statevector) + SPSA inner solver
 # ==============================================================================
 
 CNOT = np.array([[1, 0, 0, 0],
@@ -371,7 +490,7 @@ CNOT = np.array([[1, 0, 0, 0],
 def _renorm(psi: np.ndarray) -> np.ndarray:
     nrm = float(np.vdot(psi, psi).real)
     if (not np.isfinite(nrm)) or nrm <= 0:
-        psi[:] = 1.0 / math.sqrt(psi.size)
+        psi[:] = 1.0 / np.sqrt(psi.size)
     else:
         psi /= math.sqrt(nrm)
     return psi
@@ -382,7 +501,9 @@ def _apply_1q(psi: np.ndarray, gate: np.ndarray, target: int, n: int) -> np.ndar
         psi_r = psi.reshape([2] * n)
         psi_r = np.moveaxis(psi_r, target, 0)
         block = psi_r.reshape(2, -1).astype(np.complex128, copy=False)
+        np.nan_to_num(block, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         out = gate @ block
+        np.nan_to_num(out, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         psi_r = out.reshape([2] + [2] * (n - 1))
         psi = np.moveaxis(psi_r, 0, target).reshape(-1)
     return psi
@@ -396,57 +517,26 @@ def _apply_2q(psi: np.ndarray, gate4: np.ndarray, q1: int, q2: int, n: int) -> n
         psi_r = psi.reshape([2] * n)
         psi_r = np.moveaxis(psi_r, (a, b), (0, 1))
         block = psi_r.reshape(4, -1).astype(np.complex128, copy=False)
+        np.nan_to_num(block, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         out = gate4 @ block
+        np.nan_to_num(out, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         psi_r = out.reshape(2, 2, *psi_r.shape[2:])
         psi = np.moveaxis(psi_r, (0, 1), (a, b)).reshape(-1)
     return psi
 
-
-# ==============================================================================
-# 5) Expectation value via cut-mask (fast)
-# ==============================================================================
-
-def probs_from_state(psi: np.ndarray) -> np.ndarray:
-    probs = (psi.conj() * psi).real.astype(np.float64)
-    s = float(np.sum(probs))
-    if (not np.isfinite(s)) or s <= 0:
-        probs[:] = 1.0 / probs.size
-    else:
-        probs /= s
-    return np.nan_to_num(probs, nan=0.0, posinf=0.0, neginf=0.0)
-
-
-def expect_J(psi: np.ndarray, cut_mask: np.ndarray, w: np.ndarray):
-    """
-    Returns:
-      J      : expected cut value
-      p_cut  : vector of edge cut probabilities p_e = E[C_e]
-      probs  : computational basis distribution
-    """
-    probs = probs_from_state(psi)
-    p_cut = probs @ cut_mask            # shape (m,)
-    J = float(p_cut @ w)
-    if not np.isfinite(J):
-        J = 0.0
-    return float(J), p_cut.astype(np.float64), probs
-
-
-# ==============================================================================
-# 6) VQE ansatz (hardware-efficient, λ-independent at fixed params)
-# ==============================================================================
 
 def vqe_state(n: int, params: np.ndarray, L: int) -> np.ndarray:
     K = 1 << n
     psi = np.zeros(K, dtype=np.complex128)
     psi[0] = 1.0
     for l in range(L):
-        ry = params[l * (2 * n): l * (2 * n) + n]
-        rz = params[l * (2 * n) + n: (l + 1) * (2 * n)]
+        ry = params[l*(2*n): l*(2*n) + n]
+        rz = params[l*(2*n) + n: (l+1)*(2*n)]
         for q in range(n):
-            cy, sy = math.cos(ry[q] / 2), math.sin(ry[q] / 2)
+            cy, sy = math.cos(float(ry[q]) / 2.0), math.sin(float(ry[q]) / 2.0)
             RY = np.array([[cy, -sy], [sy, cy]], dtype=np.complex128)
             psi = _apply_1q(psi, RY, q, n)
-            cz, sz = np.exp(-0.5j * rz[q]), np.exp(+0.5j * rz[q])
+            cz, sz = np.exp(-0.5j * float(rz[q])), np.exp(+0.5j * float(rz[q]))
             RZ = np.array([[cz, 0], [0, sz]], dtype=np.complex128)
             psi = _apply_1q(psi, RZ, q, n)
         for q in range(n):
@@ -455,751 +545,442 @@ def vqe_state(n: int, params: np.ndarray, L: int) -> np.ndarray:
     return psi
 
 
-def vqe_energy(n: int, cut_mask: np.ndarray, w: np.ndarray, params: np.ndarray, L: int) -> float:
+def vqe_expect(
+    n: int,
+    params: np.ndarray,
+    L: int,
+    w: np.ndarray,
+    ZZ_edges: np.ndarray,
+    cut_mask: np.ndarray,
+    shots: int,
+    rng: np.random.Generator,
+):
+    """
+    Returns:
+      J (float), p_cut (m,), psi (statevector)
+    If shots>0, p_cut is estimated from bitstring samples.
+    """
     psi = vqe_state(n, params, L)
-    J, _, _ = expect_J(psi, cut_mask, w)
+    probs = (psi.conj() * psi).real.astype(np.float64)
+    s = float(np.sum(probs))
+    if (not np.isfinite(s)) or s <= 0:
+        probs[:] = 1.0 / probs.size
+    else:
+        probs /= s
+    np.nan_to_num(probs, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+
+    if shots > 0:
+        idx = rng.choice(np.arange(probs.size), size=shots, replace=True, p=probs)
+        with np.errstate(all="ignore"):
+            p_cut = np.mean(cut_mask[idx, :], axis=0).astype(np.float64)
+        np.nan_to_num(p_cut, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+    else:
+        with np.errstate(all="ignore"):
+            zexp = (ZZ_edges.astype(np.float64) @ probs).astype(np.float64)
+        np.nan_to_num(zexp, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+        zexp = np.clip(zexp, -1.0, 1.0)
+        p_cut = 0.5 * (1.0 - zexp)
+
+    with np.errstate(all="ignore"):
+        J = float(np.dot(p_cut, w))
+    if not np.isfinite(J):
+        J = 0.0
+
+    return J, p_cut, psi
+
+
+def vqe_energy(
+    n: int,
+    params: np.ndarray,
+    L: int,
+    w: np.ndarray,
+    ZZ_edges: np.ndarray,
+    cut_mask: np.ndarray,
+    shots: int,
+    rng: np.random.Generator,
+) -> float:
+    J, _, _ = vqe_expect(n, params, L, w, ZZ_edges, cut_mask, shots, rng)
     return -J
 
 
-# ==============================================================================
-# 7) QAOA ansatz (problem-dependent: λ enters via w(λ) in the cost unitary)
-# ==============================================================================
-
-def RX(theta: float) -> np.ndarray:
-    ct = math.cos(theta / 2)
-    st = math.sin(theta / 2)
-    return np.array([[ct, -1j * st],
-                     [-1j * st, ct]], dtype=np.complex128)
-
-
-def ZZ_phase(theta: float) -> np.ndarray:
-    # exp(+i theta Z⊗Z) -> diag(e^{iθ}, e^{-iθ}, e^{-iθ}, e^{iθ})
-    p = np.exp(1j * theta)
-    m = np.exp(-1j * theta)
-    return np.diag([p, m, m, p]).astype(np.complex128)
-
-
-def qaoa_state(n: int, edges, w: np.ndarray, params: np.ndarray, p: int) -> np.ndarray:
+def spsa_minimize(
+    energy_fun,
+    p0: np.ndarray,
+    bounds: List[Tuple[float, float]],
+    iters: int,
+    seed: int,
+    a: float = 0.2,
+    c: float = 0.12,
+    A: float = 20.0,
+    alpha: float = 0.602,
+    gamma: float = 0.101,
+):
     """
-    params = [γ_1..γ_p, β_1..β_p]
-    Up to global phase, cost unitary:
-      U_C = Π_e exp(+i (γ w_e / 2) Z_i Z_j).
+    Returns: best_p, best_E, evals_used
+    Per SPSA iter: Ep, Em, E -> 3 energy evaluations.
     """
-    gammas = params[:p]
-    betas = params[p:2 * p]
-
-    K = 1 << n
-    psi = np.ones(K, dtype=np.complex128) / math.sqrt(K)  # |+>^n
-
-    for l in range(p):
-        gamma = float(gammas[l])
-        beta = float(betas[l])
-
-        # cost layer
-        for (i, j), wij in zip(edges, w):
-            theta = 0.5 * gamma * float(wij)
-            psi = _apply_2q(psi, ZZ_phase(theta), int(i), int(j), n)
-
-        # mixer layer
-        gate = RX(2.0 * beta)  # exp(-i beta X) = Rx(2 beta)
-        for q in range(n):
-            psi = _apply_1q(psi, gate, q, n)
-
-        psi = _renorm(psi)
-
-    return psi
-
-
-def qaoa_energy(n: int, edges, cut_mask: np.ndarray, w: np.ndarray,
-                params: np.ndarray, p: int) -> float:
-    psi = qaoa_state(n, edges, w, params, p)
-    J, _, _ = expect_J(psi, cut_mask, w)
-    return -J
-
-
-# ==============================================================================
-# 8) Inner optimizer: SPSA (cost model as in main scripts)
-# ==============================================================================
-
-def spsa_minimize(energy_fun, p0: np.ndarray, bounds, iters: int, seed: int,
-                  a: float = 0.2, c: float = 0.12, A: float = 20.0,
-                  alpha: float = 0.602, gamma: float = 0.101):
     rng = np.random.default_rng(to_uint_seed(seed))
     p = p0.astype(float).copy()
     lo = np.array([b[0] for b in bounds], float)
     hi = np.array([b[1] for b in bounds], float)
-    best_p, best_E = p.copy(), float("inf")
+
+    best_p = p.copy()
+    best_E = float("inf")
     evals = 0
+
     for k in range(1, iters + 1):
         ak = a / ((k + A) ** alpha)
         ck = c / (k ** gamma)
         delta = rng.choice([-1.0, 1.0], size=p.size)
+
         Ep = float(energy_fun(np.clip(p + ck * delta, lo, hi)))
         Em = float(energy_fun(np.clip(p - ck * delta, lo, hi)))
         evals += 2
-        ghat = (Ep - Em) / (2.0 * ck) * delta
+
+        if (not np.isfinite(Ep)) or (not np.isfinite(Em)) or ck <= 0:
+            ghat = np.zeros_like(p)
+        else:
+            ghat = (Ep - Em) / (2.0 * ck) * delta
+
         p = np.clip(p - ak * ghat, lo, hi)
+
         E = float(energy_fun(p))
         evals += 1
-        if E < best_E:
-            best_E, best_p = E, p.copy()
+        if np.isfinite(E) and E < best_E:
+            best_E = E
+            best_p = p.copy()
+
+    if not np.isfinite(best_E):
+        best_E = float(energy_fun(best_p))
+        evals += 1
+
     return best_p, best_E, evals
 
 
-# ==============================================================================
-# 9) Classical envelope maximum for normalization J*
-# ==============================================================================
-
-def classical_Jstar(fam: Family1D, cut_mask: np.ndarray, grid_points: int) -> Tuple[float, float]:
+def inner_solve(
+    n: int,
+    L: int,
+    w: np.ndarray,
+    ZZ_edges: np.ndarray,
+    cut_mask: np.ndarray,
+    init_params: np.ndarray,
+    inner_iters: int,
+    restarts: int,
+    seed_base: int,
+    shots: int,
+):
     """
-    Compute J* = max_{λ,z} J(z;λ) approximately on a λ grid.
-    Returns (J_star, lam_star_grid).
+    Run 'restarts' SPSA inner solves and pick the best (lowest energy).
+    Returns:
+      best_params, best_J, best_p_cut, evals_used
     """
-    lams = np.linspace(fam.lam_min, fam.lam_max, int(grid_points))
-    bestJ = -1e30
-    bestLam = float(lams[0])
-    for lam in lams:
-        w = fam.w(float(lam)).astype(np.float64)
-        cut_vals = cut_mask @ w  # shape (K,)
-        j = float(np.max(cut_vals))
-        if j > bestJ:
-            bestJ = j
-            bestLam = float(lam)
-    if not np.isfinite(bestJ) or bestJ <= 0:
-        bestJ = 1.0
-    return float(bestJ), float(bestLam)
-
-
-# ==============================================================================
-# 10) Readout metrics
-# ==============================================================================
-
-def sample_indices(rng: np.random.Generator, probs: np.ndarray, shots: int) -> np.ndarray:
-    shots = int(shots)
-    if shots <= 0:
-        return np.empty(0, dtype=np.int64)
-    return rng.choice(probs.size, size=shots, replace=True, p=probs).astype(np.int64)
-
-
-def best_of_prefix(idx: np.ndarray, cut_vals: np.ndarray, shots: int) -> float:
-    shots = int(shots)
-    if shots <= 0:
-        return float("nan")
-    if idx.size < shots:
-        raise ValueError("idx must have at least 'shots' entries.")
-    return float(np.max(cut_vals[idx[:shots]]))
-
-
-def tail_probability(probs: np.ndarray,
-                     cut_vals: np.ndarray,
-                     *,
-                     metric: str,
-                     J_star: float,
-                     hit_eps: float,
-                     topk_frac: float) -> Tuple[float, float]:
-    """
-    Returns (p_tail, threshold) where
-      - metric == 'hit' : threshold = (1-hit_eps)*J_star
-      - metric == 'topk': threshold = quantile_{1-topk_frac}(cut_vals)
-    and p_tail = P(cut >= threshold) under 'probs'.
-
-    This is computed EXACTLY from the state distribution (no shot noise).
-    """
-    metric = str(metric).lower().strip()
-    if metric == "hit":
-        thr = (1.0 - float(hit_eps)) * float(J_star)
-    elif metric == "topk":
-        q = 1.0 - float(topk_frac)
-        q = float(np.clip(q, 0.0, 1.0))
-        thr = float(np.quantile(cut_vals, q))
-    else:
-        return float("nan"), float("nan")
-
-    m = cut_vals >= thr
-    p = float(np.sum(probs[m]))
-    p = float(np.clip(p, 0.0, 1.0))
-    return p, float(thr)
-
-
-# ==============================================================================
-# 11) Outer loops
-# ==============================================================================
-
-def run_outer_vqe_id(n: int,
-                     cut_mask: np.ndarray,
-                     fam: Family1D,
-                     *,
-                     J_star: float,
-                     lam0: float,
-                     outer: int,
-                     inner: int,
-                     eta0: float,
-                     eta_pow: float,
-                     step_clip: float,
-                     seed: int,
-                     L_vqe: int,
-                     readout_shots: int,
-                     shot_list: List[int],
-                     readout_seed: int,
-                     tail_metric: str,
-                     hit_eps: float,
-                     topk_frac: float):
-    """
-    VQE outer optimization using exact reuse hypergradient:
-      g = dw/dλ · p_cut
-
-    Additionally tracks:
-      - best-of-S readout for S in shot_list
-      - optional tail probability metric from the exact state distribution
-    """
-    lam_min, lam_max = fam.lam_min, fam.lam_max
-    lam = float(np.clip(lam0, lam_min, lam_max))
-
-    D = 2 * n * L_vqe
-    params = np.zeros(D, float)
+    D = init_params.size
     bounds = [(-math.pi, math.pi)] * D
 
-    shot_list = sorted({int(s) for s in shot_list if (int(s) > 0 and int(s) <= int(readout_shots))})
-    if int(readout_shots) not in shot_list:
-        shot_list.append(int(readout_shots))
-    shot_list = sorted(set(shot_list))
-    S_max = int(readout_shots)  # fixed per-step budget; smaller S use prefixes
+    best_params = init_params.copy()
+    best_E = float("inf")
+    evals_total = 0
 
-    rng_read = np.random.default_rng(to_uint_seed(readout_seed))
-
-    hist = {
-        "lam": [], "J": [], "J_best": [], "evals_cum": [],
-        "ro_best": [], "ro_best_sofar": [],
-        "tail_prob": [], "tail_best_sofar": [],
-    }
-    # per-S best-so-far
-    bestR = {S: -1e18 for S in shot_list}
-
-    evals = 0.0
-    bestJ = -1e18
-    bestTail = -1.0
-
-    for t in range(1, int(outer) + 1):
-        w = fam.w(lam)
-
-        def Efun(pvec): return vqe_energy(n, cut_mask, w, pvec, L_vqe)
-
-        params, _, ev_in = spsa_minimize(Efun, params, bounds, iters=inner, seed=seed + 1000 * t)
-        evals += float(ev_in)
-
-        # expectation at λ
-        psi = vqe_state(n, params, L_vqe)
-        J, p_cut, probs = expect_J(psi, cut_mask, w)
-        evals += 1.0
-        bestJ = max(bestJ, float(J))
-
-        # precompute per-bitstring cut values for readout metrics
-        cut_vals = (cut_mask @ w).astype(np.float64)  # shape (K,)
-
-        # readout sample once at max shots, then reuse prefixes for smaller S
-        idx = sample_indices(rng_read, probs, S_max)
-
-        for S in shot_list:
-            rb = best_of_prefix(idx, cut_vals, S)
-            bestR[S] = max(bestR[S], float(rb))
-            # store per-S running best
-            key = f"ro_best_sofar_S{S}"
-            if key not in hist:
-                hist[key] = []
-            hist[key].append(float(bestR[S]))
-
-        # main readout metric (S = readout_shots)
-        rb_main = best_of_prefix(idx, cut_vals, int(readout_shots))
-        hist["ro_best"].append(float(rb_main))
-        hist["ro_best_sofar"].append(float(bestR[int(readout_shots)]))
-
-        # tail probability (exact, no shot noise)
-        if str(tail_metric).lower() != "none":
-            p_tail, _thr = tail_probability(
-                probs, cut_vals,
-                metric=tail_metric,
-                J_star=J_star,
-                hit_eps=hit_eps,
-                topk_frac=topk_frac
-            )
-            bestTail = max(bestTail, float(p_tail))
-            hist["tail_prob"].append(float(p_tail))
-            hist["tail_best_sofar"].append(float(bestTail))
+    for r in range(int(restarts)):
+        # restart init
+        if r == 0:
+            p0 = init_params.copy()
         else:
-            hist["tail_prob"].append(float("nan"))
-            hist["tail_best_sofar"].append(float("nan"))
+            rrng = np.random.default_rng(to_uint_seed(seed_base + 999 * (r + 1)))
+            p0 = rrng.uniform(-math.pi, math.pi, size=D).astype(float)
 
-        # hypergradient (reuse term; exact for VQE)
-        g = float(fam.dw_dlam(lam) @ p_cut)
+        # shot RNG for this inner run (only used if shots>0)
+        eval_rng = np.random.default_rng(to_uint_seed(seed_base + 1337 * (r + 1)))
 
-        # outer step
-        eta = eta0 / (t ** eta_pow)
-        step = float(np.clip(eta * g, -step_clip, step_clip))
-        lam = float(np.clip(lam + step, lam_min, lam_max))
+        def Efun(pvec):
+            return vqe_energy(n, pvec, L, w, ZZ_edges, cut_mask, shots, eval_rng)
 
-        hist["lam"].append(lam)
-        hist["J"].append(float(J))
-        hist["J_best"].append(float(bestJ))
-        hist["evals_cum"].append(float(evals))
+        p_star, E_star, ev = spsa_minimize(
+            Efun, p0, bounds, iters=inner_iters,
+            seed=seed_base + 17 * (r + 1),
+        )
+        evals_total += int(ev)
 
-    for k in hist:
-        hist[k] = np.asarray(hist[k], float)
-    return hist
+        if np.isfinite(E_star) and E_star < best_E:
+            best_E = E_star
+            best_params = p_star.copy()
+
+    # evaluate final best to obtain J and p_cut (counts as ONE energy evaluation)
+    eval_rng_final = np.random.default_rng(to_uint_seed(seed_base + 424242))
+    J, p_cut, _ = vqe_expect(n, best_params, L, w, ZZ_edges, cut_mask, shots, eval_rng_final)
+    evals_total += 1
+
+    return best_params, float(J), p_cut.astype(np.float64), int(evals_total)
 
 
-def run_outer_qaoa_full(n: int,
-                       edges,
-                       cut_mask: np.ndarray,
-                       fam: Family1D,
-                       *,
-                       J_star: float,
-                       lam0: float,
-                       outer: int,
-                       inner: int,
-                       eta0: float,
-                       eta_pow: float,
-                       step_clip: float,
-                       seed: int,
-                       p_qaoa: int,
-                       fd_c_frac: float,
-                       readout_shots: int,
-                       shot_list: List[int],
-                       readout_seed: int,
-                       tail_metric: str,
-                       hit_eps: float,
-                       topk_frac: float):
+# ==============================================================================
+# 5) Outer loops (edge-wise λ) under evaluation budget B
+# ==============================================================================
+
+def auc_step(evals: np.ndarray, values: np.ndarray, budget: float) -> float:
     """
-    QAOA outer optimization using fixed-θ FD hypergradient:
-      g_full ≈ [J(θ,λ+c) - J(θ,λ-c)] / (2c)
-    which includes explicit + state-dependence terms.
+    Step-function AUC on [0, budget].
+    Assumes best-so-far is held constant between recorded events.
+    """
+    evals = np.asarray(evals, float)
+    values = np.asarray(values, float)
+    budget = float(budget)
+    if evals.size == 0:
+        return 0.0
 
-    Additionally tracks:
-      - best-of-S readout for S in shot_list
-      - optional tail probability metric from the exact state distribution
+    # prepend at 0 with first value
+    if evals[0] > 0.0:
+        evals = np.insert(evals, 0, 0.0)
+        values = np.insert(values, 0, float(values[0]))
+
+    # truncate to <= budget and append exactly budget
+    m = evals <= budget
+    evals = evals[m]
+    values = values[m]
+    if evals.size == 0:
+        return float(values[0])
+
+    if evals[-1] < budget:
+        evals = np.append(evals, budget)
+        values = np.append(values, values[-1])
+
+    dx = np.diff(evals)
+    area = float(np.sum(dx * values[:-1]))
+    return area / float(budget)
+
+
+def _best_at_budget(evals: np.ndarray, best_norm: np.ndarray, budget: float) -> float:
+    g = np.array([float(budget)], float)
+    return float(_step_interp(evals, best_norm, g)[0])
+
+
+def run_outer_budget_edgewise(
+    mode: str,
+    n: int,
+    edges,
+    fam: FamilyEdgeWise,
+    ZZ_edges: np.ndarray,
+    cut_mask: np.ndarray,
+    lam_vec0: np.ndarray,
+    outer_max: int,
+    inner_iters: int,
+    restarts: int,
+    L: int,
+    seed: int,
+    eta0: float,
+    eta_pow: float,
+    step_clip: float,
+    c_frac: float,
+    shots: int,
+    budget_evals: float,
+    Jstar: float,
+    fd_warmstart: str = "best",
+) -> Dict[str, np.ndarray]:
+    """
+    Runs outer optimization until budget or outer_max.
+
+    Returns trace dictionaries:
+      events_evals: cumulative evals after each value-query completion (center, and +/− for FD)
+      events_best : best-so-far normalized by J* at each event
+      outer_evals : cumulative evals after each completed OUTER iteration (after update)
+      evals_end   : total evals used
+      lam_vec_end : final λ vector
     """
     lam_min, lam_max = fam.lam_min, fam.lam_max
-    lam = float(np.clip(lam0, lam_min, lam_max))
+    lam_vec = np.clip(np.asarray(lam_vec0, float), lam_min, lam_max)
 
-    D = 2 * p_qaoa
+    D = 2 * n * L
     params = np.zeros(D, float)
-    bounds = [(-math.pi, math.pi)] * D
-
-    shot_list = sorted({int(s) for s in shot_list if (int(s) > 0 and int(s) <= int(readout_shots))})
-    if int(readout_shots) not in shot_list:
-        shot_list.append(int(readout_shots))
-    shot_list = sorted(set(shot_list))
-    S_max = int(readout_shots)  # fixed per-step budget; smaller S use prefixes
-
-    rng_read = np.random.default_rng(to_uint_seed(readout_seed))
-
-    c_fd = float(fd_c_frac * (lam_max - lam_min))
-
-    hist = {
-        "lam": [], "J": [], "J_best": [], "evals_cum": [],
-        "ro_best": [], "ro_best_sofar": [],
-        "tail_prob": [], "tail_best_sofar": [],
-    }
-    bestR = {S: -1e18 for S in shot_list}
 
     evals = 0.0
-    bestJ = -1e18
-    bestTail = -1.0
+    best = -1e30
 
-    for t in range(1, int(outer) + 1):
-        w = fam.w(lam)
+    events_evals: List[float] = []
+    events_best: List[float] = []
+    outer_evals: List[float] = []
 
-        def Efun(pvec): return qaoa_energy(n, edges, cut_mask, w, pvec, p_qaoa)
+    c = float(c_frac * (lam_max - lam_min))
 
-        params, _, ev_in = spsa_minimize(Efun, params, bounds, iters=inner, seed=seed + 1000 * t)
-        evals += float(ev_in)
+    rng_dir = np.random.default_rng(to_uint_seed(seed + 999999))
 
-        # expectation at λ
-        psi = qaoa_state(n, edges, w, params, p_qaoa)
-        J, _p_cut, probs = expect_J(psi, cut_mask, w)
-        evals += 1.0
-        bestJ = max(bestJ, float(J))
+    for t in range(1, int(outer_max) + 1):
+        # --- center value query F(λ) via inner solve
+        w = fam.w(lam_vec)
 
-        cut_vals = (cut_mask @ w).astype(np.float64)
+        params_c, Jc, p_cut_c, ev_c = inner_solve(
+            n=n, L=L, w=w, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
+            init_params=params, inner_iters=inner_iters, restarts=restarts,
+            seed_base=seed + 100000 * t + 111, shots=shots
+        )
+        params = params_c
+        evals += float(ev_c)
 
-        # readout (sample once, reuse prefixes)
-        idx = sample_indices(rng_read, probs, S_max)
+        best = max(best, float(Jc))
+        events_evals.append(evals)
+        events_best.append(best / Jstar)
 
-        for S in shot_list:
-            rb = best_of_prefix(idx, cut_vals, S)
-            bestR[S] = max(bestR[S], float(rb))
-            key = f"ro_best_sofar_S{S}"
-            if key not in hist:
-                hist[key] = []
-            hist[key].append(float(bestR[S]))
+        if mode == "ID":
+            # full hypergradient vector (correlator reuse): g_e = w'_e(λ_e) * p_e
+            g_vec = fam.dw_dlam(lam_vec) * p_cut_c
 
-        rb_main = best_of_prefix(idx, cut_vals, int(readout_shots))
-        hist["ro_best"].append(float(rb_main))
-        hist["ro_best_sofar"].append(float(bestR[int(readout_shots)]))
+        elif mode == "FD_SPSA":
+            # random direction Δ ∈ {±1}^m
+            delta = rng_dir.choice([-1.0, +1.0], size=lam_vec.size).astype(float)
 
-        # tail probability (exact)
-        if str(tail_metric).lower() != "none":
-            p_tail, _thr = tail_probability(
-                probs, cut_vals,
-                metric=tail_metric,
-                J_star=J_star,
-                hit_eps=hit_eps,
-                topk_frac=topk_frac
+            lam_p = np.clip(lam_vec + c * delta, lam_min, lam_max)
+            lam_m = np.clip(lam_vec - c * delta, lam_min, lam_max)
+
+            # + perturbation solve
+            w_p = fam.w(lam_p)
+            params_p, Jp, _, ev_p = inner_solve(
+                n=n, L=L, w=w_p, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
+                init_params=params, inner_iters=inner_iters, restarts=restarts,
+                seed_base=seed + 100000 * t + 777, shots=shots
             )
-            bestTail = max(bestTail, float(p_tail))
-            hist["tail_prob"].append(float(p_tail))
-            hist["tail_best_sofar"].append(float(bestTail))
+            evals += float(ev_p)
+            best = max(best, float(Jp))
+            events_evals.append(evals)
+            events_best.append(best / Jstar)
+
+            # - perturbation solve
+            w_m = fam.w(lam_m)
+            params_m, Jm, _, ev_m = inner_solve(
+                n=n, L=L, w=w_m, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
+                init_params=params, inner_iters=inner_iters, restarts=restarts,
+                seed_base=seed + 100000 * t + 999, shots=shots
+            )
+            evals += float(ev_m)
+            best = max(best, float(Jm))
+            events_evals.append(evals)
+            events_best.append(best / Jstar)
+
+            # SPSA-FD gradient estimate on F
+            g_scalar = (float(Jp) - float(Jm)) / (2.0 * c) if c > 0 else 0.0
+            g_vec = g_scalar * delta
+
+            # optional warm-start for the NEXT center solve
+            if fd_warmstart == "best":
+                # pick params from the best of {center, plus, minus}
+                if (Jp >= Jc) and (Jp >= Jm):
+                    params = params_p
+                elif (Jm >= Jc) and (Jm >= Jp):
+                    params = params_m
+                else:
+                    params = params_c
+            else:
+                # keep center params (default earlier scripts)
+                params = params_c
+
         else:
-            hist["tail_prob"].append(float("nan"))
-            hist["tail_best_sofar"].append(float("nan"))
+            raise ValueError("mode must be 'ID' or 'FD_SPSA'")
 
-        # fixed-θ FD hypergradient (2 extra objective evals)
-        lp = float(np.clip(lam + c_fd, lam_min, lam_max))
-        lm = float(np.clip(lam - c_fd, lam_min, lam_max))
-        if abs(lp - lm) < 1e-12:
-            g = 0.0
-        else:
-            wp = fam.w(lp)
-            wm = fam.w(lm)
+        # --- outer update (projected gradient ascent on box)
+        eta = float(eta0 / (t ** eta_pow))
+        step = eta * g_vec
+        step = np.clip(step, -float(step_clip), float(step_clip))
+        lam_vec = np.clip(lam_vec + step, lam_min, lam_max)
 
-            psi_p = qaoa_state(n, edges, wp, params, p_qaoa)
-            Jp, _, _ = expect_J(psi_p, cut_mask, wp)
+        outer_evals.append(float(evals))
 
-            psi_m = qaoa_state(n, edges, wm, params, p_qaoa)
-            Jm, _, _ = expect_J(psi_m, cut_mask, wm)
+        if evals >= float(budget_evals):
+            break
 
-            evals += 2.0
-            g = float((Jp - Jm) / (lp - lm))
+    return {
+        "events_evals": np.asarray(events_evals, float),
+        "events_best": np.asarray(events_best, float),
+        "outer_evals": np.asarray(outer_evals, float),
+        "evals_end": np.array([evals], float),
+        "lam_vec_end": lam_vec.astype(float),
+    }
 
-        # outer step
-        eta = eta0 / (t ** eta_pow)
-        step = float(np.clip(eta * g, -step_clip, step_clip))
-        lam = float(np.clip(lam + step, lam_min, lam_max))
 
-        hist["lam"].append(lam)
-        hist["J"].append(float(J))
-        hist["J_best"].append(float(bestJ))
-        hist["evals_cum"].append(float(evals))
-
-    for k in hist:
-        hist[k] = np.asarray(hist[k], float)
-    return hist
+def steps_within_budget(outer_evals: np.ndarray, budget: float) -> int:
+    outer_evals = np.asarray(outer_evals, float)
+    return int(np.sum(outer_evals <= float(budget)))
 
 
 # ==============================================================================
-# 12) Plotting helpers
+# 6) CSV / table writers
 # ==============================================================================
 
-def _mean_stderr(Y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    mu = np.mean(Y, axis=0)
-    if Y.shape[0] > 1:
-        se = np.std(Y, axis=0, ddof=1) / math.sqrt(Y.shape[0])
-    else:
-        se = np.zeros_like(mu)
-    return mu, se
+def write_csv(path: Path, rows: List[Dict], fieldnames: List[str]):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
 
 
-def plot_expect_and_readout_vs_evals(path: Path,
-                                     curves_expect: Dict[str, List[Dict]],
-                                     curves_readout: Dict[str, List[Dict]],
-                                     budget: float,
-                                     readout_shots: int,
-                                     annotate: bool = False):
+def write_table_tex(path: Path, summary_rows: List[Dict], caption: str, label: str):
     """
-    Side-by-side (1x2) main figure:
-      left  : best-so-far expectation (J/J*)
-      right : best-so-far sampled cut (best-of-S, /J*)
-    No panel labels (a/b). No extra annotation text boxes. Legend only once.
+    Minimal booktabs LaTeX table:
+      metric | ID mean±stderr | FD mean±stderr
     """
-    set_pub_style(grid=False)
-
-    # two-column width for side-by-side
-    FULL_W = 6.95   # inches
-    H = H_COL       # keep your single-panel height
-
-    fig, (ax1, ax2) = plt.subplots(
-        1, 2, figsize=(FULL_W, H), constrained_layout=True
-    )
-
-    E = np.linspace(0.0, float(budget), 320)
-
-    # expectation stats
-    stats_exp = {}
-    for name, runs in curves_expect.items():
-        Y = np.vstack([step_sample(r["evals"], r["best"], E) for r in runs])
-        stats_exp[name] = _mean_stderr(Y)
-
-    # readout stats
-    stats_ro = {}
-    for name, runs in curves_readout.items():
-        Y = np.vstack([step_sample(r["evals"], r["best"], E) for r in runs])
-        stats_ro[name] = _mean_stderr(Y)
-
-    def draw(ax, stats, name, color, ls, label, alpha_fill, z):
-        mu, se = stats[name]
-        ax.plot(E, mu, color=color, lw=1.8, ls=ls, label=label, zorder=z)
-        ax.fill_between(E, mu - se, mu + se, color=color, alpha=alpha_fill, lw=0, zorder=z - 1)
-
-    # Left: expectation
-    draw(ax1, stats_exp, "VQE",  COLORS["VQE"],  "-",  "_nolegend_", 0.12, z=3)
-    draw(ax1, stats_exp, "QAOA", COLORS["QAOA"], "--", "_nolegend_", 0.10, z=4)
-    ax1.set_ylabel(r"Best-so-far expectation $J/J^*$")
-
-    # Right: readout
-    draw(ax2, stats_ro, "VQE",  COLORS["VQE"],  "-",  "ID(VQE)", 0.12, z=3)
-    draw(ax2, stats_ro, "QAOA", COLORS["QAOA"], "--", r"ID(QAOA, full $\partial_\lambda J$)", 0.10, z=4)
-    ax2.set_ylabel(r"Best sampled cut $/J^*$")
-    ax2.set_xlabel("Energy evaluations")
-
-    # Limits
-    for ax, stats in [(ax1, stats_exp), (ax2, stats_ro)]:
-        ax.set_xlim(0.0, float(budget))
-        mus = [v[0] for v in stats.values()]
-        y_max = float(np.max(np.vstack(mus))) if mus else 1.0
-        ax.set_ylim(0.0, min(1.25, max(0.65, y_max * 1.10)))
-
-    # Legend only once (right panel)
-    leg = ax2.legend(loc="lower right", frameon=True, fancybox=False, framealpha=0.88)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-
-    _savefig(fig, path)
-
-
-def plot_tailprob_vs_evals(path: Path,
-                           curves_tail: Dict[str, List[Dict]],
-                           budget: float,
-                           tail_label: str,
-                           annotate: bool = True):
-    """
-    Optional: Tail probability (best-so-far) vs energy-eval budget.
-    """
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
-
-    E = np.linspace(0.0, float(budget), 320)
-
-    stats = {}
-    for name, runs in curves_tail.items():
-        Y = np.vstack([step_sample(r["evals"], r["best"], E) for r in runs])
-        stats[name] = _mean_stderr(Y)
-
-    def draw(name: str, color: str, ls: str, label: str, alpha_fill: float, z: int):
-        mu, se = stats[name]
-        ax.plot(E, mu, color=color, lw=1.8, ls=ls, label=label, zorder=z)
-        ax.fill_between(E, mu - se, mu + se, color=color, alpha=alpha_fill, lw=0, zorder=z - 1)
-
-    draw("VQE", COLORS["VQE"], "-", "ID(VQE)", 0.12, z=3)
-    draw("QAOA", COLORS["QAOA"], "--", r"ID(QAOA, full $\partial_\lambda J$)", 0.10, z=4)
-
-    ax.set_xlabel("Energy evaluations")
-    ax.set_ylabel(tail_label)
-    ax.set_xlim(0.0, float(budget))
-    ax.set_ylim(0.0, 1.02)
-
-    leg = ax.legend(loc="lower right", frameon=True, fancybox=False, framealpha=0.88)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-
-    if annotate:
-        vqe_end = float(stats["VQE"][0][-1])
-        qaoa_end = float(stats["QAOA"][0][-1])
-        ax.text(0.02, 0.98, f"Tail@B: VQE={vqe_end:.3f} | QAOA={qaoa_end:.3f}",
-                transform=ax.transAxes, va="top", ha="left",
-                bbox=dict(facecolor="white", edgecolor="none", alpha=0.88, pad=1.6))
-
-    _savefig(fig, path)
-
-
-def plot_evals_vs_outer(path: Path,
-                        evals_mean: Dict[str, np.ndarray]):
-    """Optional: mean cumulative energy evals vs outer iteration."""
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
-
-    for name, ev_mean in evals_mean.items():
-        t = np.arange(1, ev_mean.size + 1)
-        if name == "VQE":
-            ax.plot(t, ev_mean, color=COLORS["VQE"], lw=1.8, label="ID(VQE)", zorder=3)
-        elif name == "QAOA":
-            ax.plot(t, ev_mean, color=COLORS["QAOA"], lw=1.8, ls="--",
-                    label=r"ID(QAOA, full $\partial_\lambda J$)", zorder=4)
-        else:
-            ax.plot(t, ev_mean, lw=1.5, label=name)
-
-    ax.set_xlabel(r"Outer iteration $t$")
-    ax.set_ylabel("Cumulative energy evaluations")
-
-    leg = ax.legend(loc="upper left", frameon=True, fancybox=False, framealpha=0.88)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-
-    _savefig(fig, path)
-
-
-def plot_tradeoff_scatter(path: Path,
-                          x_vqe: np.ndarray, y_vqe: np.ndarray,
-                          x_qaoa: np.ndarray, y_qaoa: np.ndarray,
-                          xlabel: str, ylabel: str,
-                          annotate: bool = True):
-    """
-    Optional: Scatter at budget B.
-      x = expectation metric, y = readout metric.
-      Diagonal y=x is a reference: points above it have stronger tail advantage.
-    """
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
-
-    x_vqe = np.asarray(x_vqe, float)
-    y_vqe = np.asarray(y_vqe, float)
-    x_qaoa = np.asarray(x_qaoa, float)
-    y_qaoa = np.asarray(y_qaoa, float)
-
-    ax.scatter(x_vqe, y_vqe, s=26, alpha=0.9,
-               color=COLORS["VQE"], edgecolors="white", linewidths=0.3,
-               label="ID(VQE)", zorder=3)
-    ax.scatter(x_qaoa, y_qaoa, s=26, alpha=0.9,
-               color=COLORS["QAOA"], edgecolors="white", linewidths=0.3,
-               label=r"ID(QAOA, full $\partial_\lambda J$)", zorder=4)
-
-    # y=x diagonal (explicitly requested)
-    lo = float(min(np.min(x_vqe), np.min(y_vqe), np.min(x_qaoa), np.min(y_qaoa)))
-    hi = float(max(np.max(x_vqe), np.max(y_vqe), np.max(x_qaoa), np.max(y_qaoa)))
-    pad = 0.05 * (hi - lo + 1e-12)
-    ax.plot([lo - pad, hi + pad], [lo - pad, hi + pad],
-            color="black", lw=0.9, ls=":", zorder=2)
-
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-
-    # nice limits around [0, 1]
-    ax.set_xlim(max(0.0, lo - pad), min(1.02, hi + pad))
-    ax.set_ylim(max(0.0, lo - pad), min(1.02, hi + pad))
-
-    leg = ax.legend(loc="lower right", frameon=True, fancybox=False, framealpha=0.88)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-
-    if annotate:
-        ax.text(0.02, 0.98, "Above $y=x$: tail advantage",
-                transform=ax.transAxes, va="top", ha="left",
-                bbox=dict(facecolor="white", edgecolor="none", alpha=0.88, pad=1.6))
-
-    _savefig(fig, path)
-
-
-def plot_readout_shots_sweep(path: Path,
-                             shots: List[int],
-                             stats_vqe: List[Tuple[float, float]],
-                             stats_qaoa: List[Tuple[float, float]],
-                             budget: float,
-                             annotate: bool = True):
-    """
-    Optional: At fixed eval budget B, show mean±stderr of best-of-S readout vs S.
-    This directly addresses "256 shots is too many" reviewer concerns.
-    """
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
-
-    shots = [int(s) for s in shots]
-    x = np.asarray(shots, float)
-
-    vqe_mu = np.asarray([m for (m, _se) in stats_vqe], float)
-    vqe_se = np.asarray([_se for (_m, _se) in stats_vqe], float)
-
-    qaoa_mu = np.asarray([m for (m, _se) in stats_qaoa], float)
-    qaoa_se = np.asarray([_se for (_m, _se) in stats_qaoa], float)
-
-    ax.errorbar(x, vqe_mu, yerr=vqe_se, color=COLORS["VQE"], lw=1.6, ls="-",
-                marker="o", ms=3.5, capsize=2.5, label="ID(VQE)", zorder=3)
-    ax.errorbar(x, qaoa_mu, yerr=qaoa_se, color=COLORS["QAOA"], lw=1.6, ls="--",
-                marker="s", ms=3.3, capsize=2.5, label=r"ID(QAOA, full $\partial_\lambda J$)", zorder=4)
-
-    ax.set_xscale("log", base=2)
-    ax.set_xticks(x)
-    ax.get_xaxis().set_major_formatter(mpl.ticker.ScalarFormatter())
-    ax.set_xlabel(r"Readout shots per outer step $S$")
-    ax.set_ylabel(r"Best-of-$S$ at budget $B$  ($/J^*$)")
-    ax.set_ylim(0.0, 1.02)
-
-    leg = ax.legend(loc="lower right", frameon=True, fancybox=False, framealpha=0.88)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-
-    if annotate:
-        ax.text(0.02, 0.98, f"Fixed energy-eval budget: B={budget:.0f}",
-                transform=ax.transAxes, va="top", ha="left",
-                bbox=dict(facecolor="white", edgecolor="none", alpha=0.88, pad=1.6))
-
-    _savefig(fig, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        f.write("% Auto-generated by exp7_edgewise_lambda_vector.py\n")
+        f.write("\\begin{table}[t]\n")
+        f.write("\\centering\n")
+        f.write(f"\\caption{{{caption}}}\n")
+        f.write(f"\\label{{{label}}}\n")
+        f.write("\\small\n")
+        f.write("\\begin{tabular}{lcc}\n")
+        f.write("\\toprule\n")
+        f.write("Metric & VQE+ID & VQE+FD\\\\\n")
+        f.write("\\midrule\n")
+        for r in summary_rows:
+            f.write(f"{r['metric']} & {r['id_mean']:.3f}$\\pm${r['id_se']:.3f} & "
+                    f"{r['fd_mean']:.3f}$\\pm${r['fd_se']:.3f}\\\\\n")
+        f.write("\\bottomrule\n")
+        f.write("\\end{tabular}\n")
+        f.write("\\end{table}\n")
 
 
 # ==============================================================================
-# 13) Main
+# 7) Main
 # ==============================================================================
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--out", type=str, default="out_exp2C_readout_bridge")
+    p.add_argument("--out", type=str, default="out_exp7_edgewise")
     p.add_argument("--fmt", type=str, default="pdf", choices=["pdf", "png", "svg"])
 
-    # instance set
-    p.add_argument("--seeds", type=str, default="7,8,9,10,11,12,13,14")
+    # instances / seeds
+    p.add_argument("--seed0", type=int, default=7)
+    p.add_argument("--num_instances", type=int, default=20)
+
+    # problem
+    p.add_argument("--family", type=str, default="periodic", choices=["linear", "quadratic", "periodic"])
+    p.add_argument("--periodic_K", type=int, default=6)
     p.add_argument("--n", type=int, default=12)
     p.add_argument("--p_edge", type=float, default=0.45)
-
-    # family
-    p.add_argument("--kind", type=str, default="quadratic", choices=["linear", "quadratic", "periodic"])
-    p.add_argument("--periodic_K", type=int, default=6)
     p.add_argument("--lam_min", type=float, default=-5.0)
     p.add_argument("--lam_max", type=float, default=5.0)
     p.add_argument("--lam0", type=float, default=0.8)
-    p.add_argument("--grid", type=int, default=401)
 
-    # ansatz depths
-    p.add_argument("--L_vqe", type=int, default=2)
-    p.add_argument("--p_qaoa", type=int, default=3)
+    # VQE / inner
+    p.add_argument("--L", type=int, default=2)
+    p.add_argument("--inner_iters", type=int, default=10)
+    p.add_argument("--restarts", type=int, default=1)
+    p.add_argument("--shots", type=int, default=0, help="shots per energy evaluation (0 = exact)")
 
-    # budgets
-    p.add_argument("--outer", type=int, default=5)
-    p.add_argument("--inner", type=int, default=10)
-
-    # outer schedule
-    p.add_argument("--eta0", type=float, default=0.12)
+    # outer
+    p.add_argument("--outer_max", type=int, default=400)
+    p.add_argument("--eta0", type=float, default=0.35)
     p.add_argument("--eta_pow", type=float, default=0.6)
     p.add_argument("--step_clip", type=float, default=0.6)
+    p.add_argument("--c_frac", type=float, default=0.05)
 
-    # QAOA FD step
-    p.add_argument("--fd_c_frac", type=float, default=0.05)
+    # budget + normalization scan
+    p.add_argument("--budget_evals", type=float, default=5000)
+    p.add_argument("--wmax_grid", type=int, default=801, help="grid points to scan per-edge w^max for J* diagnostic")
+    p.add_argument("--budget_points", type=int, default=240, help="points in shared budget grid for plotting")
 
-    # readout realism
-    p.add_argument("--readout_shots", type=int, default=256,
-                   help="Main readout budget S per outer step for the main 2-panel figure.")
-    p.add_argument("--supp_shots", type=str, default="2,4,8,16,32,64,128",
-                   help="Comma-separated additional shot budgets for a sweep plot (supplement). "
-                        "Set to '' to disable.")
+    # FD warm start
+    p.add_argument("--fd_warmstart", type=str, default="best", choices=["best", "center"],
+                   help="How to warm-start the next center solve in FD. 'best' uses the best of center/+/- params.")
 
-    # tail metric (optional, recommended)
-    p.add_argument("--tail_metric", type=str, default="hit", choices=["none", "hit", "topk"],
-                   help="Tail metric to plot: "
-                        "'hit' = P(cut >= (1-eps)J*), "
-                        "'topk' = P(cut in top-k%% bitstrings).")
-    p.add_argument("--hit_eps", type=float, default=0.10,
-                   help="ε for hit-rate threshold (1-ε)J*. Default 0.10 => 90%% of J*.")
-    p.add_argument("--topk_frac", type=float, default=0.01,
-                   help="k for top-k tail probability (fraction, not percent). Default 0.01 => top 1%%.")
-
-    # plots toggles (default ON for paper convenience)
-    p.set_defaults(cost_plot=True)
-    p.add_argument("--no_cost_plot", action="store_false", dest="cost_plot",
-                   help="Disable the evals-vs-outer cost plot.")
-    p.set_defaults(tradeoff_plot=True)
-    p.add_argument("--no_tradeoff_plot", action="store_false", dest="tradeoff_plot",
-                   help="Disable the tradeoff scatter plot at budget B.")
-    p.set_defaults(shots_sweep_plot=True)
-    p.add_argument("--no_shots_sweep_plot", action="store_false", dest="shots_sweep_plot",
-                   help="Disable the readout-shot sweep plot (if supp_shots provided).")
-
-    p.add_argument("--no_annotate", action="store_true")
     return p.parse_args()
 
 
@@ -1208,354 +989,267 @@ def main():
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    seeds = parse_int_list(a.seeds)
-    if not seeds:
-        raise ValueError("No seeds provided.")
+    # Precompute Z once (depends only on n)
+    Z = precompute_z_big_endian(a.n)
 
-    # readout shot list for sweep (includes main S)
-    supp_raw = parse_int_list(a.supp_shots)
-    # Supplement is meant for *smaller* shot budgets (e.g. 16/32/64) under the SAME per-step budget S.
-    supp = [int(x) for x in supp_raw if (int(x) > 0 and int(x) <= int(a.readout_shots))]
-    ignored = [int(x) for x in supp_raw if int(x) > int(a.readout_shots)]
-    if ignored:
-        print(f"[warn] ignoring supp_shots > readout_shots (per-step budget): {ignored}")
-    shot_list = sorted(set([int(a.readout_shots)] + supp))
-    if not shot_list:
-        shot_list = [int(a.readout_shots)]
+    run_rows: List[Dict] = []
 
-    Z = precompute_z_big_endian(int(a.n))
+    # store per-instance budget-interpolated traces (best-so-far / J*)
+    budget_grid = np.linspace(0.0, float(a.budget_evals), int(a.budget_points))
+    best_id_grid_list: List[np.ndarray] = []
+    best_fd_grid_list: List[np.ndarray] = []
 
-    # step curves (budget-first)
-    curves_expect = {"VQE": [], "QAOA": []}
-    curves_readout_main = {"VQE": [], "QAOA": []}
-    curves_tail = {"VQE": [], "QAOA": []}
+    # per-instance scalars
+    auc_id_list = []
+    auc_fd_list = []
+    auc_gain_list = []
+    steps_id_list = []
+    steps_fd_list = []
+    m_edges_list = []
 
-    # per-shot sweep curves (for budget-B extraction)
-    curves_readout_byS: Dict[int, Dict[str, List[Dict]]] = {S: {"VQE": [], "QAOA": []} for S in shot_list}
+    for r in range(int(a.num_instances)):
+        seed = int(a.seed0 + r)
+        rng = np.random.default_rng(to_uint_seed(seed))
 
-    # store evals curves for cost plot
-    evals_curves = {"VQE": [], "QAOA": []}
-
-    rows = []
-
-    for s in seeds:
-        rng = np.random.default_rng(to_uint_seed(s))
-        edges = generate_random_graph(int(a.n), float(a.p_edge), rng)
-        retry = 0
-        while (not edges) and retry < 50:
-            retry += 1
-            edges = generate_random_graph(int(a.n), float(a.p_edge), rng)
+        edges = generate_random_graph(a.n, a.p_edge, rng)
         if not edges:
-            print(f"[warn] skip seed={s} (empty graph)")
+            # deterministic bump to avoid empty graphs
+            rng2 = np.random.default_rng(to_uint_seed(seed + 12345))
+            edges = generate_random_graph(a.n, a.p_edge, rng2)
+        if not edges:
             continue
 
+        m = len(edges)
         cut_mask = build_cut_mask(edges, Z)
-        fam = Family1D(len(edges), a.kind, (a.lam_min, a.lam_max), rng, K=int(a.periodic_K))
-        J_star, lam_star = classical_Jstar(fam, cut_mask, int(a.grid))
+        ZZ_edges = build_ZZ_edges(edges, Z)
 
-        hist_vqe = run_outer_vqe_id(
-            a.n, cut_mask, fam,
-            J_star=J_star,
-            lam0=a.lam0, outer=a.outer, inner=a.inner,
-            eta0=a.eta0, eta_pow=a.eta_pow, step_clip=a.step_clip,
-            seed=s + 0,
-            L_vqe=a.L_vqe,
-            readout_shots=a.readout_shots,
-            shot_list=shot_list,
-            readout_seed=s + 4242,
-            tail_metric=a.tail_metric,
-            hit_eps=a.hit_eps,
-            topk_frac=a.topk_frac
+        fam = FamilyEdgeWise(m=m, kind=a.family, lam_bounds=(a.lam_min, a.lam_max), rng=rng, K=a.periodic_K)
+
+        # diagnostic normalization J*
+        wmax = fam.w_max(grid_points=a.wmax_grid)
+        Jstar = classical_Jstar_from_wmax(cut_mask, wmax)
+        if (not np.isfinite(Jstar)) or Jstar <= 0:
+            Jstar = 1.0
+
+        lam_vec0 = np.full(m, float(a.lam0), dtype=float)
+
+        # ID run
+        hist_id = run_outer_budget_edgewise(
+            mode="ID",
+            n=a.n, edges=edges, fam=fam, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
+            lam_vec0=lam_vec0,
+            outer_max=a.outer_max,
+            inner_iters=a.inner_iters,
+            restarts=a.restarts,
+            L=a.L,
+            seed=seed,
+            eta0=a.eta0,
+            eta_pow=a.eta_pow,
+            step_clip=a.step_clip,
+            c_frac=a.c_frac,
+            shots=a.shots,
+            budget_evals=a.budget_evals,
+            Jstar=Jstar,
+            fd_warmstart=a.fd_warmstart,
         )
 
-        hist_qaoa = run_outer_qaoa_full(
-            a.n, edges, cut_mask, fam,
-            J_star=J_star,
-            lam0=a.lam0, outer=a.outer, inner=a.inner,
-            eta0=a.eta0, eta_pow=a.eta_pow, step_clip=a.step_clip,
-            seed=s + 100000,
-            p_qaoa=a.p_qaoa,
-            fd_c_frac=a.fd_c_frac,
-            readout_shots=a.readout_shots,
-            shot_list=shot_list,
-            readout_seed=s + 8888,
-            tail_metric=a.tail_metric,
-            hit_eps=a.hit_eps,
-            topk_frac=a.topk_frac
+        # FD run (SPSA finite difference on F)
+        hist_fd = run_outer_budget_edgewise(
+            mode="FD_SPSA",
+            n=a.n, edges=edges, fam=fam, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
+            lam_vec0=lam_vec0,
+            outer_max=a.outer_max,
+            inner_iters=a.inner_iters,
+            restarts=a.restarts,
+            L=a.L,
+            seed=seed,
+            eta0=a.eta0,
+            eta_pow=a.eta_pow,
+            step_clip=a.step_clip,
+            c_frac=a.c_frac,
+            shots=a.shots,
+            budget_evals=a.budget_evals,
+            Jstar=Jstar,
+            fd_warmstart=a.fd_warmstart,
         )
 
-        # normalize curves
-        vqe_exp = np.clip(hist_vqe["J_best"] / J_star, 0.0, 1.5)
-        qaoa_exp = np.clip(hist_qaoa["J_best"] / J_star, 0.0, 1.5)
+        # Interpolate best-so-far onto shared budget grid
+        best_id_grid = _step_interp(hist_id["events_evals"], hist_id["events_best"], budget_grid)
+        best_fd_grid = _step_interp(hist_fd["events_evals"], hist_fd["events_best"], budget_grid)
+        best_id_grid_list.append(best_id_grid)
+        best_fd_grid_list.append(best_fd_grid)
 
-        vqe_ro_main = np.clip(hist_vqe[f"ro_best_sofar_S{int(a.readout_shots)}"] / J_star, 0.0, 1.5)
-        qaoa_ro_main = np.clip(hist_qaoa[f"ro_best_sofar_S{int(a.readout_shots)}"] / J_star, 0.0, 1.5)
+        # Scalars
+        auc_id = auc_step(hist_id["events_evals"], hist_id["events_best"], a.budget_evals)
+        auc_fd = auc_step(hist_fd["events_evals"], hist_fd["events_best"], a.budget_evals)
+        gain = float(auc_id - auc_fd)
 
-        curves_expect["VQE"].append({"evals": hist_vqe["evals_cum"], "best": vqe_exp})
-        curves_expect["QAOA"].append({"evals": hist_qaoa["evals_cum"], "best": qaoa_exp})
+        best_final_id = _best_at_budget(hist_id["events_evals"], hist_id["events_best"], a.budget_evals)
+        best_final_fd = _best_at_budget(hist_fd["events_evals"], hist_fd["events_best"], a.budget_evals)
 
-        curves_readout_main["VQE"].append({"evals": hist_vqe["evals_cum"], "best": vqe_ro_main})
-        curves_readout_main["QAOA"].append({"evals": hist_qaoa["evals_cum"], "best": qaoa_ro_main})
+        steps_id = steps_within_budget(hist_id["outer_evals"], a.budget_evals)
+        steps_fd = steps_within_budget(hist_fd["outer_evals"], a.budget_evals)
 
-        # per-shot curves (for sweep)
-        for S in shot_list:
-            vqe_ro_S = np.clip(hist_vqe[f"ro_best_sofar_S{S}"] / J_star, 0.0, 1.5)
-            qaoa_ro_S = np.clip(hist_qaoa[f"ro_best_sofar_S{S}"] / J_star, 0.0, 1.5)
-            curves_readout_byS[S]["VQE"].append({"evals": hist_vqe["evals_cum"], "best": vqe_ro_S})
-            curves_readout_byS[S]["QAOA"].append({"evals": hist_qaoa["evals_cum"], "best": qaoa_ro_S})
+        auc_id_list.append(auc_id)
+        auc_fd_list.append(auc_fd)
+        auc_gain_list.append(gain)
+        steps_id_list.append(steps_id)
+        steps_fd_list.append(steps_fd)
+        m_edges_list.append(m)
 
-        # tail curves
-        if str(a.tail_metric).lower() != "none":
-            vqe_tail = np.clip(hist_vqe["tail_best_sofar"], 0.0, 1.0)
-            qaoa_tail = np.clip(hist_qaoa["tail_best_sofar"], 0.0, 1.0)
-            curves_tail["VQE"].append({"evals": hist_vqe["evals_cum"], "best": vqe_tail})
-            curves_tail["QAOA"].append({"evals": hist_qaoa["evals_cum"], "best": qaoa_tail})
-
-        # cost curves
-        evals_curves["VQE"].append(hist_vqe["evals_cum"])
-        evals_curves["QAOA"].append(hist_qaoa["evals_cum"])
-
-        # per-seed row (final-at-end, plus settings)
-        row = {
-            "seed": int(s),
-            "kind": a.kind,
-            "n": int(a.n),
-            "m_edges": int(len(edges)),
-            "J_star_grid": float(J_star),
-            "lam_star_grid": float(lam_star),
-            "outer": int(a.outer),
-            "inner": int(a.inner),
-            "L_vqe": int(a.L_vqe),
-            "p_qaoa": int(a.p_qaoa),
+        run_rows.append({
+            "instance": r,
+            "seed": seed,
+            "family": a.family,
+            "K": float(a.periodic_K) if a.family == "periodic" else float("nan"),
+            "n": float(a.n),
+            "p_edge": float(a.p_edge),
+            "m_edges": int(m),
+            "L": int(a.L),
+            "inner_iters": int(a.inner_iters),
+            "restarts": int(a.restarts),
+            "shots": int(a.shots),
+            "budget_evals": float(a.budget_evals),
+            "c_frac": float(a.c_frac),
             "eta0": float(a.eta0),
             "eta_pow": float(a.eta_pow),
             "step_clip": float(a.step_clip),
-            "fd_c_frac": float(a.fd_c_frac),
-            "readout_shots": int(a.readout_shots),
-            "supp_shots": a.supp_shots,
-            "tail_metric": str(a.tail_metric),
-            "hit_eps": float(a.hit_eps),
-            "topk_frac": float(a.topk_frac),
-            "vqe_exp_final": float(vqe_exp[-1]),
-            "qaoa_exp_final": float(qaoa_exp[-1]),
-            "vqe_ro_final": float(vqe_ro_main[-1]),
-            "qaoa_ro_final": float(qaoa_ro_main[-1]),
-            "vqe_evals_final": float(hist_vqe["evals_cum"][-1]),
-            "qaoa_evals_final": float(hist_qaoa["evals_cum"][-1]),
-        }
-        if str(a.tail_metric).lower() != "none":
-            row.update({
-                "vqe_tail_final": float(vqe_tail[-1]),
-                "qaoa_tail_final": float(qaoa_tail[-1]),
-            })
-        rows.append(row)
+            "fd_warmstart": a.fd_warmstart,
+            "Jstar": float(Jstar),
 
-        msg = (f"[seed={s}] exp_final: VQE={vqe_exp[-1]:.3f} | QAOA={qaoa_exp[-1]:.3f} || "
-               f"readout_final(S={a.readout_shots}): VQE={vqe_ro_main[-1]:.3f} | QAOA={qaoa_ro_main[-1]:.3f}")
-        if str(a.tail_metric).lower() != "none":
-            msg += f" || tail_final: VQE={vqe_tail[-1]:.3f} | QAOA={qaoa_tail[-1]:.3f}"
-        print(msg)
+            "auc_id": float(auc_id),
+            "auc_fd": float(auc_fd),
+            "auc_gain": float(gain),
 
-    if not rows:
-        raise RuntimeError("No runs completed.")
+            "best_final_id": float(best_final_id),
+            "best_final_fd": float(best_final_fd),
 
-    # common energy-eval budget B for fair curves
-    all_end = []
-    for name in ["VQE", "QAOA"]:
-        for r in curves_expect[name]:
-            all_end.append(float(r["evals"][-1]))
-    B = float(min(all_end))
+            "steps_id": int(steps_id),
+            "steps_fd": int(steps_fd),
 
-    # mean evals-vs-outer (cost plot)
-    evals_mean = {}
-    for name, arrs in evals_curves.items():
-        if not arrs:
-            continue
-        M = np.vstack(arrs)  # (N, outer)
-        evals_mean[name] = np.mean(M, axis=0)
+            "evals_end_id": float(hist_id["evals_end"][0]),
+            "evals_end_fd": float(hist_fd["evals_end"][0]),
+        })
 
-    # helpers
-    def budget_stats(curves: Dict[str, List[Dict]], name: str) -> Tuple[float, float]:
-        vals = [step_value_at(r["evals"], r["best"], B) for r in curves[name]]
-        vals = np.asarray(vals, float)
-        mu = float(np.mean(vals))
-        se = float(np.std(vals, ddof=1) / math.sqrt(vals.size)) if vals.size > 1 else 0.0
-        return mu, se
+        print(f"[inst={r:02d} seed={seed:3d} |m|={m:2d}] "
+              f"AUC_ID={auc_id:.4f} AUC_FD={auc_fd:.4f} gain={gain:+.4f}  "
+              f"steps(ID,FD)=({steps_id},{steps_fd})  "
+              f"final(ID,FD)=({best_final_id:.3f},{best_final_fd:.3f})")
 
-    def auc_stats(curves: Dict[str, List[Dict]], name: str) -> Tuple[float, float]:
-        vals = [step_auc(r["evals"], r["best"], B) / (B * 1.0) for r in curves[name]]
-        vals = np.asarray(vals, float)
-        mu = float(np.mean(vals))
-        se = float(np.std(vals, ddof=1) / math.sqrt(vals.size)) if vals.size > 1 else 0.0
-        return mu, se
+    if not run_rows:
+        raise RuntimeError("No instances generated (graphs had 0 edges). Try increasing p_edge or changing seed0.")
 
-    # expectation + readout stats @B
-    vqe_exp_mu, vqe_exp_se = budget_stats(curves_expect, "VQE")
-    qaoa_exp_mu, qaoa_exp_se = budget_stats(curves_expect, "QAOA")
-    vqe_ro_mu, vqe_ro_se = budget_stats(curves_readout_main, "VQE")
-    qaoa_ro_mu, qaoa_ro_se = budget_stats(curves_readout_main, "QAOA")
+    # Save per-instance CSV
+    runs_csv = out / "runs7_edgewise_metrics.csv"
+    write_csv(runs_csv, run_rows, fieldnames=list(run_rows[0].keys()))
 
-    vqe_exp_auc, vqe_exp_auc_se = auc_stats(curves_expect, "VQE")
-    qaoa_exp_auc, qaoa_exp_auc_se = auc_stats(curves_expect, "QAOA")
-    vqe_ro_auc, vqe_ro_auc_se = auc_stats(curves_readout_main, "VQE")
-    qaoa_ro_auc, qaoa_ro_auc_se = auc_stats(curves_readout_main, "QAOA")
+    # Stack for plotting
+    best_id_grid_all = np.vstack(best_id_grid_list)
+    best_fd_grid_all = np.vstack(best_fd_grid_list)
+    auc_gain = np.asarray(auc_gain_list, float)
+    m_edges = np.asarray(m_edges_list, float)
+    steps_id = np.asarray(steps_id_list, float)
+    steps_fd = np.asarray(steps_fd_list, float)
 
-    # gap / closure summaries
-    gap_exp = vqe_exp_mu - qaoa_exp_mu
-    gap_ro = vqe_ro_mu - qaoa_ro_mu
-    gap_closure = float("nan")
-    if abs(gap_exp) > 1e-12 and np.isfinite(gap_exp) and np.isfinite(gap_ro):
-        gap_closure = 1.0 - (gap_ro / gap_exp)
+    N = best_id_grid_all.shape[0]
+    suf = (f"{a.family}_n{a.n}_B{int(a.budget_evals)}_inner{a.inner_iters}_R{a.restarts}_"
+           f"S{a.shots}_seed0{a.seed0}_N{N}")
 
-    # tail factor: how much sampling boosts over expectation
-    tail_factor_vqe = float(vqe_ro_mu / max(vqe_exp_mu, 1e-12))
-    tail_factor_qaoa = float(qaoa_ro_mu / max(qaoa_exp_mu, 1e-12))
-
-    # tail metric stats (optional)
-    tail_mu = tail_se = tail_auc_mu = tail_auc_se = None
-    if str(a.tail_metric).lower() != "none" and curves_tail["VQE"]:
-        vqe_tail_mu, vqe_tail_se = budget_stats(curves_tail, "VQE")
-        qaoa_tail_mu, qaoa_tail_se = budget_stats(curves_tail, "QAOA")
-        vqe_tail_auc, vqe_tail_auc_se = auc_stats(curves_tail, "VQE")
-        qaoa_tail_auc, qaoa_tail_auc_se = auc_stats(curves_tail, "QAOA")
-        tail_mu = (vqe_tail_mu, qaoa_tail_mu)
-        tail_se = (vqe_tail_se, qaoa_tail_se)
-        tail_auc_mu = (vqe_tail_auc, qaoa_tail_auc)
-        tail_auc_se = (vqe_tail_auc_se, qaoa_tail_auc_se)
-
-    # shot sweep stats (optional)
-    sweep_stats = []
-    for S in shot_list:
-        mu_v, se_v = budget_stats(curves_readout_byS[S], "VQE")
-        mu_q, se_q = budget_stats(curves_readout_byS[S], "QAOA")
-        sweep_stats.append((S, mu_v, se_v, mu_q, se_q))
-
-    # write CSV + summary
-    write_csv(out / "exp2C_results.csv", rows)
-
-    lines = []
-    lines.append(f"Experiment 2C (upgraded) | kind={a.kind} | seeds={len(rows)} | budget B={B:.1f} evals")
-    lines.append(f"Settings: eta0={a.eta0} eta_pow={a.eta_pow} step_clip={a.step_clip} "
-                 f"fd_c_frac={a.fd_c_frac} | readout_shots={a.readout_shots} | supp_shots={a.supp_shots}")
-    lines.append("")
-
-    lines.append("Best-so-far ratios at budget B (mean ± stderr):")
-    lines.append(f"  Expectation  ID(VQE):   {vqe_exp_mu:.4f} ± {vqe_exp_se:.4f}")
-    lines.append(f"  Expectation  ID(QAOA):  {qaoa_exp_mu:.4f} ± {qaoa_exp_se:.4f}")
-    lines.append(f"  Readout best ID(VQE):   {vqe_ro_mu:.4f} ± {vqe_ro_se:.4f}")
-    lines.append(f"  Readout best ID(QAOA):  {qaoa_ro_mu:.4f} ± {qaoa_ro_se:.4f}")
-
-    lines.append("")
-    lines.append("Normalized AUC over [0,B] (mean ± stderr):")
-    lines.append(f"  AUC Expectation ID(VQE):  {vqe_exp_auc:.4f} ± {vqe_exp_auc_se:.4f}")
-    lines.append(f"  AUC Expectation ID(QAOA): {qaoa_exp_auc:.4f} ± {qaoa_exp_auc_se:.4f}")
-    lines.append(f"  AUC Readout     ID(VQE):  {vqe_ro_auc:.4f} ± {vqe_ro_auc_se:.4f}")
-    lines.append(f"  AUC Readout     ID(QAOA): {qaoa_ro_auc:.4f} ± {qaoa_ro_auc_se:.4f}")
-
-    lines.append("")
-    lines.append("Gaps at budget B:")
-    lines.append(f"  Δ_expect = VQE - QAOA = {gap_exp:.4f}")
-    lines.append(f"  Δ_readout= VQE - QAOA = {gap_ro:.4f}")
-    if np.isfinite(gap_closure):
-        lines.append(f"  Gap-closure from sampling = 1 - Δ_readout/Δ_expect = {gap_closure:.3f}")
-
-    lines.append("")
-    lines.append("Tail factor (readout/expectation) at budget B:")
-    lines.append(f"  tail_factor(VQE)  = {tail_factor_vqe:.3f}")
-    lines.append(f"  tail_factor(QAOA) = {tail_factor_qaoa:.3f}")
-
-    if tail_mu is not None:
-        vqe_tail_mu, qaoa_tail_mu = tail_mu
-        vqe_tail_se, qaoa_tail_se = tail_se
-        vqe_tail_auc, qaoa_tail_auc = tail_auc_mu
-        vqe_tail_auc_se, qaoa_tail_auc_se = tail_auc_se
-
-        lines.append("")
-        if str(a.tail_metric).lower() == "hit":
-            lines.append(f"Tail metric: hit-rate P(cut >= (1-ε)J*) with ε={a.hit_eps:.3f}")
-        else:
-            lines.append(f"Tail metric: top-k tail P(cut in top {100*a.topk_frac:.2f}% bitstrings)")
-        lines.append(f"  Tail@B ID(VQE):   {vqe_tail_mu:.4f} ± {vqe_tail_se:.4f}")
-        lines.append(f"  Tail@B ID(QAOA):  {qaoa_tail_mu:.4f} ± {qaoa_tail_se:.4f}")
-        lines.append(f"  AUC Tail ID(VQE): {vqe_tail_auc:.4f} ± {vqe_tail_auc_se:.4f}")
-        lines.append(f"  AUC Tail ID(QAOA):{qaoa_tail_auc:.4f} ± {qaoa_tail_auc_se:.4f}")
-
-    if sweep_stats and a.supp_shots.strip() and a.shots_sweep_plot:
-        lines.append("")
-        lines.append("Readout shot sweep at budget B (best-of-S):")
-        for (S, mu_v, se_v, mu_q, se_q) in sweep_stats:
-            lines.append(f"  S={S:4d} | VQE {mu_v:.4f} ± {se_v:.4f} | QAOA {mu_q:.4f} ± {se_q:.4f}")
-
-    lines.append("")
-    lines.append("Saved outputs:")
-    lines.append(f"  - fig2C_expect_and_readout_vs_evals.{a.fmt}")
-    if str(a.tail_metric).lower() != "none":
-        lines.append(f"  - fig2C_tailprob_vs_evals.{a.fmt}")
-    if a.supp_shots.strip() and a.shots_sweep_plot:
-        lines.append(f"  - fig2C_readout_shots_sweep.{a.fmt}")
-    if a.cost_plot:
-        lines.append(f"  - fig2C_evals_vs_outer.{a.fmt}")
-    if a.tradeoff_plot:
-        lines.append(f"  - fig2C_tradeoff_scatter.{a.fmt}")
-    lines.append("  - exp2C_results.csv")
-    lines.append("  - exp2C_summary.txt")
-
-    with open(out / "exp2C_summary.txt", "w") as f:
-        f.write("\n".join(lines) + "\n")
-
-    # --- plots
-    plot_expect_and_readout_vs_evals(
-        out / f"fig2C_expect_and_readout_vs_evals.{a.fmt}",
-        curves_expect, curves_readout_main,
-        budget=B,
-        readout_shots=a.readout_shots,
-        annotate=(not a.no_annotate)
+    # Figure(s)
+    fig_path = out / f"fig7_edgewise_budget_gain_{suf}.{a.fmt}"
+    plot_2panel_budget_and_gain(
+        fig_path,
+        budget_grid=budget_grid,
+        best_id_grid=best_id_grid_all,
+        best_fd_grid=best_fd_grid_all,
+        auc_gain=auc_gain,
+        m_edges=m_edges,
+        budget_evals=float(a.budget_evals),
     )
 
-    if str(a.tail_metric).lower() != "none" and curves_tail["VQE"]:
-        if str(a.tail_metric).lower() == "hit":
-            tail_label = rf"Best-so-far $P(\mathrm{{cut}}\geq (1-\epsilon)J^*)$  ($\epsilon$={a.hit_eps:.2f})"
-        else:
-            tail_label = rf"Best-so-far $P(\mathrm{{cut}}\in \mathrm{{top}}\ {100*a.topk_frac:.1f}\%)$"
-        plot_tailprob_vs_evals(
-            out / f"fig2C_tailprob_vs_evals.{a.fmt}",
-            curves_tail,
-            budget=B,
-            tail_label=tail_label,
-            annotate=(not a.no_annotate)
-        )
+    fig_steps = out / f"fig7_edgewise_steps_{suf}.{a.fmt}"
+    plot_steps_bar(fig_steps, steps_id=steps_id, steps_fd=steps_fd)
 
-    if a.supp_shots.strip() and a.shots_sweep_plot:
-        shots_sorted = sorted(set(shot_list))
-        stats_vqe = [(budget_stats(curves_readout_byS[S], "VQE")) for S in shots_sorted]
-        stats_qaoa = [(budget_stats(curves_readout_byS[S], "QAOA")) for S in shots_sorted]
-        plot_readout_shots_sweep(
-            out / f"fig2C_readout_shots_sweep.{a.fmt}",
-            shots_sorted, stats_vqe, stats_qaoa,
-            budget=B,
-            annotate=(not a.no_annotate)
-        )
+    # Summary table (mean ± stderr)
+    def _summ(arr: np.ndarray):
+        arr = np.asarray(arr, float)
+        mu = float(np.nanmean(arr))
+        se = float(np.nanstd(arr, ddof=1) / math.sqrt(max(1, np.sum(np.isfinite(arr))))) if np.sum(np.isfinite(arr)) > 1 else float("nan")
+        return mu, se
 
-    if a.cost_plot:
-        plot_evals_vs_outer(out / f"fig2C_evals_vs_outer.{a.fmt}", evals_mean)
+    best_final_id = np.array([row["best_final_id"] for row in run_rows], float)
+    best_final_fd = np.array([row["best_final_fd"] for row in run_rows], float)
+    auc_id = np.array([row["auc_id"] for row in run_rows], float)
+    auc_fd = np.array([row["auc_fd"] for row in run_rows], float)
+    steps_id_arr = np.array([row["steps_id"] for row in run_rows], float)
+    steps_fd_arr = np.array([row["steps_fd"] for row in run_rows], float)
 
-    if a.tradeoff_plot:
-        # scatter points at budget B for each seed/method
-        vqe_x = np.array([step_value_at(r["evals"], r["best"], B) for r in curves_expect["VQE"]], float)
-        vqe_y = np.array([step_value_at(r["evals"], r["best"], B) for r in curves_readout_main["VQE"]], float)
-        qaoa_x = np.array([step_value_at(r["evals"], r["best"], B) for r in curves_expect["QAOA"]], float)
-        qaoa_y = np.array([step_value_at(r["evals"], r["best"], B) for r in curves_readout_main["QAOA"]], float)
+    summary_rows = []
+    for metric, arr_id, arr_fd in [
+        (r"Final best-so-far / $J^*$", best_final_id, best_final_fd),
+        (r"$\mathrm{AUC}_B$", auc_id, auc_fd),
+        (r"Outer steps within budget $B$", steps_id_arr, steps_fd_arr),
+    ]:
+        idm, ids = _summ(arr_id)
+        fdm, fds = _summ(arr_fd)
+        summary_rows.append({"metric": metric, "id_mean": idm, "id_se": ids, "fd_mean": fdm, "fd_se": fds})
 
-        plot_tradeoff_scatter(
-            out / f"fig2C_tradeoff_scatter.{a.fmt}",
-            vqe_x, vqe_y, qaoa_x, qaoa_y,
-            xlabel=r"Best expectation at budget $B$  ($J/J^*$)",
-            ylabel=rf"Best-of-{int(a.readout_shots)} readout at budget $B$  ($/J^*$)",
-            annotate=(not a.no_annotate)
-        )
+    # Save summary CSV
+    table_csv = out / "table7_edgewise_summary.csv"
+    with table_csv.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=["metric", "id_mean", "id_stderr", "fd_mean", "fd_stderr"])
+        w.writeheader()
+        for rrow in summary_rows:
+            w.writerow({
+                "metric": rrow["metric"],
+                "id_mean": f"{rrow['id_mean']:.6f}",
+                "id_stderr": f"{rrow['id_se']:.6f}",
+                "fd_mean": f"{rrow['fd_mean']:.6f}",
+                "fd_stderr": f"{rrow['fd_se']:.6f}",
+            })
 
-    print("\n".join(lines))
-    print("Saved to:", out.resolve())
+    table_tex = out / "table7_edgewise_summary.tex"
+    write_table_tex(
+        table_tex,
+        summary_rows,
+        caption=(f"Experiment 7 (edge-wise outer parameters). "
+                 f"Mean$\\pm$stderr over $N={N}$ random instances for a shared evaluation budget "
+                 f"$B={int(a.budget_evals)}$ (energy evaluations)."),
+        label="tab:exp7_edgewise",
+    )
+
+    # Compact text summary
+    txt = out / "exp7_edgewise_summary.txt"
+    with txt.open("w", encoding="utf-8") as f:
+        f.write("Experiment 7 — Edge-wise outer parameters (vector λ)\n")
+        f.write(f"family={a.family} | K={a.periodic_K if a.family=='periodic' else 'NA'} | n={a.n} | p_edge={a.p_edge}\n")
+        f.write(f"inner_iters={a.inner_iters} | restarts={a.restarts} | L={a.L} | shots={a.shots}\n")
+        f.write(f"budget_evals={a.budget_evals} | num_instances={N} | seed0={a.seed0}\n")
+        f.write(f"FD warm-start: {a.fd_warmstart}\n\n")
+
+        mu_gain = float(np.mean(auc_gain[np.isfinite(auc_gain)]))
+        sem_gain = float(np.std(auc_gain[np.isfinite(auc_gain)], ddof=1) / math.sqrt(max(1, np.sum(np.isfinite(auc_gain))))) if np.sum(np.isfinite(auc_gain)) > 1 else float("nan")
+        win = float(np.mean(auc_gain[np.isfinite(auc_gain)] > 0.0))
+
+        f.write(f"ΔAUC_B mean (ID−FD): {mu_gain:+.6f}  (sem={sem_gain:.6f})\n")
+        f.write(f"win rate (ΔAUC>0): {100.0*win:.2f}%\n\n")
+
+        for rrow in summary_rows:
+            f.write(f"{rrow['metric']}: ID={rrow['id_mean']:.4f}±{rrow['id_se']:.4f} | "
+                    f"FD={rrow['fd_mean']:.4f}±{rrow['fd_se']:.4f}\n")
+
+        f.write("\nFiles:\n")
+        f.write(f"  Figure (budget+gain): {fig_path.name}\n")
+        f.write(f"  Figure (steps):       {fig_steps.name}\n")
+        f.write(f"  Runs CSV:             {runs_csv.name}\n")
+        f.write(f"  Summary table:        {table_tex.name}\n")
+
+    print("\nSaved to:", out.resolve())
+    print("Figure:", fig_path.name)
+    print("Steps fig:", fig_steps.name)
+    print("Runs CSV:", runs_csv.name)
+    print("Summary:", table_tex.name, "/", table_csv.name)
+    print("Text:", txt.name)
 
 
 if __name__ == "__main__":
