@@ -83,93 +83,34 @@ python exp7_edgewise_lambda_vector.py \
 
 """
 
-import math
 import argparse
 import csv
-import warnings
-import logging
+import math
 from pathlib import Path
-from typing import Tuple, List, Dict, Optional
+from typing import Dict, List
 
-import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib as mpl
+import numpy as np
 
-
-# ------------------------------------------------------------------------------
-# Silence noisy-but-harmless fontTools PDF logs and a few numpy warnings
-# ------------------------------------------------------------------------------
-warnings.filterwarnings("ignore", message=".*timestamp seems very low.*")
-warnings.filterwarnings("ignore", message=".*regarding as unix timestamp.*")
-warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*encountered in matmul.*")
-
-_ft = logging.getLogger("fontTools")
-_ft.setLevel(logging.ERROR)
-_ft.propagate = False
-if not _ft.handlers:
-    _ft.addHandler(logging.NullHandler())
-logging.getLogger("fontTools.ttLib").setLevel(logging.ERROR)
-logging.getLogger("fontTools.subset").setLevel(logging.ERROR)
-
+from paramham.families import FamilyEdgeWise
+from paramham.graphs import generate_random_graph
+from paramham.maxcut import build_cut_mask, build_ZZ_edges
+from paramham.maxcut import precompute_z as precompute_z_big_endian
+from paramham.plotting import COL_W, COLORS, FULL_W, _savefig, set_pub_style
+from paramham.seeds import to_uint_seed
+from paramham.simulator import vqe_state
+from paramham.spsa import spsa_minimize
 
 # ==============================================================================
-# 1) Paper-ish plotting style (NPJ/Nature-ish)
+# Experiment-specific constant
 # ==============================================================================
 
-COLORS = {
-    "ID":  "#D62728",  # red
-    "FD":  "#1F77B4",  # blue
-    "GT":  "#000000",
-}
-
-FULL_W = 6.95
 H_TWO = 2.6
-COL_W = 3.37
 
 
-def set_pub_style(grid: bool = False):
-    mpl.rcdefaults()
-    mpl.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["DejaVu Serif", "Times New Roman", "Liberation Serif"],
-        "font.size": 8,
-        "axes.labelsize": 9,
-        "legend.fontsize": 7,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
-        "mathtext.fontset": "cm",
-        "axes.formatter.use_mathtext": True,
-        "lines.linewidth": 1.6,
-        "xtick.direction": "in",
-        "ytick.direction": "in",
-        "xtick.top": True,
-        "ytick.right": True,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "axes.linewidth": 0.8,
-        "axes.grid": grid,
-        "grid.alpha": 0.15,
-        "grid.linestyle": "--",
-        "grid.linewidth": 0.5,
-        "pdf.fonttype": 42,
-        "ps.fonttype": 42,
-        "svg.fonttype": "none",
-        "savefig.bbox": "tight",
-        "savefig.pad_inches": 0.03,
-        "savefig.transparent": False,
-        "figure.dpi": 300,
-        "figure.facecolor": "white",
-        "axes.facecolor": "white",
-    })
-
-
-def _savefig(fig: plt.Figure, path: Path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    ext = path.suffix.lower()
-    if ext in [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".pdf"]:
-        fig.savefig(path, dpi=600)
-    else:
-        fig.savefig(path)
+# ==============================================================================
+# Experiment-specific helpers (kept inline)
+# ==============================================================================
 
 
 def _mean_stderr(x: np.ndarray, axis: int = 0):
@@ -209,261 +150,6 @@ def _step_interp(evals: np.ndarray, vals: np.ndarray, grid: np.ndarray) -> np.nd
     return vals[idx]
 
 
-def plot_2panel_budget_and_gain(
-    path: Path,
-    budget_grid: np.ndarray,
-    best_id_grid: np.ndarray,
-    best_fd_grid: np.ndarray,
-    auc_gain: np.ndarray,
-    m_edges: np.ndarray,
-    budget_evals: float,
-):
-    """
-    Two-panel, paper-ready figure:
-      left: mean±stderr best-so-far / J* vs evaluation budget (step-interp grid)
-      right: per-instance ΔAUC_B vs |E| (scatter only; no extra annotation)
-
-    best_*_grid: (N, G)
-    """
-    set_pub_style(grid=False)
-    b = np.asarray(budget_grid, float)
-
-    mu_id, se_id = _mean_stderr(best_id_grid, axis=0)
-    mu_fd, se_fd = _mean_stderr(best_fd_grid, axis=0)
-
-    fig, axs = plt.subplots(1, 2, figsize=(FULL_W, H_TWO), constrained_layout=True)
-
-    # Left panel: Budget curves
-    ax = axs[0]
-    ax.plot(b, mu_id, color=COLORS["ID"], label="VQE + ID")
-    ax.fill_between(b, mu_id - se_id, mu_id + se_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
-    ax.plot(b, mu_fd, color=COLORS["FD"], ls="--", label="VQE + FD")
-    ax.fill_between(b, mu_fd - se_fd, mu_fd + se_fd, color=COLORS["FD"], alpha=0.18, linewidth=0)
-    ax.set_xlabel("Energy evaluations")
-    ax.set_ylabel(r"Best-so-far $\hat F / J^*$")
-    ax.set_xlim(float(b[0]), float(b[-1]))
-    y_all = np.concatenate([mu_id, mu_fd])
-    y0 = max(0.0, float(np.nanmin(y_all) - 0.04))
-    y1 = min(1.05, float(np.nanmax(y_all) + 0.04))
-    ax.set_ylim(y0, y1)
-    ax.legend(loc="lower right", frameon=False)
-
-    # Right panel: ΔAUC vs |E|
-    ax = axs[1]
-    x = np.asarray(m_edges, float)
-    y = np.asarray(auc_gain, float)
-
-    ax.axhline(0.0, color=COLORS["GT"], lw=1.0, ls=":")
-    ax.scatter(x, y, s=22, color="#666666", alpha=0.75, edgecolors="none")
-
-    ax.set_xlabel(r"Number of edges $|E|$")
-    ax.set_ylabel(r"$\Delta \mathrm{AUC}_B$ (ID $-$ FD)")
-
-    _savefig(fig, path)
-    plt.close(fig)
-
-
-def plot_steps_bar(
-    path: Path,
-    steps_id: np.ndarray,
-    steps_fd: np.ndarray,
-):
-    """
-    Bar chart: outer steps completed within budget B (mean±stderr).
-    """
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=(COL_W, H_TWO), constrained_layout=True)
-
-    sid = np.asarray(steps_id, float)
-    sfd = np.asarray(steps_fd, float)
-
-    mu_id = float(np.nanmean(sid))
-    mu_fd = float(np.nanmean(sfd))
-    se_id = float(np.nanstd(sid, ddof=1) / math.sqrt(max(1, np.sum(np.isfinite(sid))))) if np.sum(np.isfinite(sid)) > 1 else float("nan")
-    se_fd = float(np.nanstd(sfd, ddof=1) / math.sqrt(max(1, np.sum(np.isfinite(sfd))))) if np.sum(np.isfinite(sfd)) > 1 else float("nan")
-
-    xs = np.array([0, 1], int)
-    mus = np.array([mu_id, mu_fd], float)
-    ses = np.array([se_id, se_fd], float)
-
-    ax.bar(xs, mus, yerr=ses, capsize=3, width=0.6,
-           color=["#dddddd", "#dddddd"], edgecolor=["#444444", "#444444"])
-    ax.scatter([0], [mu_id], color=COLORS["ID"], s=26, zorder=5, edgecolors="white", linewidth=0.5)
-    ax.scatter([1], [mu_fd], color=COLORS["FD"], s=26, zorder=5, edgecolors="white", linewidth=0.5)
-
-    ax.set_xticks(xs)
-    ax.set_xticklabels(["ID", "FD"])
-    ax.set_ylabel(r"Outer steps within budget $B$")
-    ax.set_xlim(-0.6, 1.6)
-
-    ratio = mu_id / max(1e-12, mu_fd)
-    ax.text(0.5, 0.98, fr"steps ratio $\approx$ {ratio:.2f}$\times$",
-            transform=ax.transAxes, ha="center", va="top", fontsize=7)
-
-    _savefig(fig, path)
-    plt.close(fig)
-
-
-# ==============================================================================
-# 2) Utilities: instance generation and bitstring precomputations
-# ==============================================================================
-
-def to_uint_seed(seed: int) -> int:
-    return int(seed) % (2**32 - 1)
-
-
-def generate_random_graph(n: int, p_edge: float, rng: np.random.Generator):
-    edges = []
-    for i in range(n):
-        for j in range(i + 1, n):
-            if rng.random() < p_edge:
-                edges.append((i, j))
-    return edges
-
-
-def precompute_z_big_endian(n: int) -> np.ndarray:
-    """
-    Z[q, state] ∈ {+1,-1} for big-endian ordering.
-    """
-    K = 1 << n
-    idx = np.arange(K, dtype=np.uint32)
-    Z = np.empty((n, K), dtype=np.int8)
-    for q in range(n):
-        bitpos = n - 1 - q
-        Z[q] = 1 - 2 * ((idx >> bitpos) & 1).astype(np.int8)
-    return Z
-
-
-def build_cut_mask(edges, Z: np.ndarray) -> np.ndarray:
-    """
-    cut_mask[state, e] = (1 - Z_i Z_j)/2 ∈ {0,1}
-    """
-    _, K = Z.shape
-    m = len(edges)
-    cut = np.empty((K, m), dtype=np.float64)
-    for e, (i, j) in enumerate(edges):
-        cut[:, e] = 0.5 * (1.0 - (Z[i] * Z[j]).astype(np.float64))
-    return cut
-
-
-def build_ZZ_edges(edges, Z: np.ndarray) -> np.ndarray:
-    """
-    ZZ[e, state] = Z_i(state) * Z_j(state) ∈ {+1,-1}
-    """
-    _, K = Z.shape
-    m = len(edges)
-    ZZ = np.empty((m, K), dtype=np.int8)
-    for e, (i, j) in enumerate(edges):
-        ZZ[e] = (Z[i] * Z[j]).astype(np.int8)
-    return ZZ
-
-
-# ==============================================================================
-# 3) Edge-wise parametric family: w_e(λ_e)
-# ==============================================================================
-
-class FamilyEdgeWise:
-    """
-    Edge-wise parametric coupling family.
-
-    For each edge e:
-      w_e(λ_e) = wbar_e + A_e * f_e(x(λ_e))
-    with x(λ) = 2(λ - mid)/Δ ∈ [-1,1].
-
-    Canonical shapes (mean-zero, unit-RMS under x~Unif[-1,1]):
-      linear:     f = √3 s x
-      quadratic:  f = √(45/4) s (x^2 - 1/3)
-      periodic:   f = √2 cos(π k x + φ),    k∈{1,...,K}
-
-    Important: This class is "edge-wise": λ is a vector of shape (m,).
-    """
-    def __init__(self, m: int, kind: str, lam_bounds: Tuple[float, float],
-                 rng: np.random.Generator, K: int = 6):
-        self.kind = str(kind)
-        self.lam_min, self.lam_max = map(float, lam_bounds)
-        self.mid = 0.5 * (self.lam_min + self.lam_max)
-        self.Delta = max(1e-12, self.lam_max - self.lam_min)
-        self.dx_dlam = 2.0 / self.Delta
-
-        # positive baseline + moderate amplitude
-        self.wbar = rng.uniform(2.0, 3.0, size=m).astype(float)
-        self.A = rng.uniform(0.3, 0.8, size=m).astype(float)
-
-        if self.kind in ("linear", "quadratic"):
-            self.s = rng.choice([-1.0, +1.0], size=m).astype(float)
-            self.k = None
-            self.phi = None
-        elif self.kind == "periodic":
-            self.s = None
-            self.k = rng.integers(1, K + 1, size=m).astype(float)
-            self.phi = rng.uniform(0.0, 2*np.pi, size=m).astype(float)
-        else:
-            raise ValueError("family kind must be linear, quadratic, or periodic")
-
-    def x(self, lam_vec: np.ndarray) -> np.ndarray:
-        lam_vec = np.asarray(lam_vec, float)
-        return 2.0 * (lam_vec - self.mid) / self.Delta
-
-    def f_df(self, x: np.ndarray):
-        x = np.asarray(x, float)
-        if self.kind == "linear":
-            c = math.sqrt(3.0)
-            f = c * self.s * x
-            df = c * self.s * np.ones_like(x)
-        elif self.kind == "quadratic":
-            c = math.sqrt(45.0 / 4.0)
-            f = c * self.s * (x*x - 1.0/3.0)
-            df = c * self.s * (2.0 * x)
-        else:
-            c = math.sqrt(2.0)
-            arg = math.pi * self.k * x + self.phi
-            f = c * np.cos(arg)
-            df = c * (-math.pi * self.k) * np.sin(arg)
-        return f, df
-
-    def w(self, lam_vec: np.ndarray) -> np.ndarray:
-        f, _ = self.f_df(self.x(lam_vec))
-        w = self.wbar + self.A * f
-        w = np.nan_to_num(w, nan=0.0, posinf=0.0, neginf=0.0)
-        return w.astype(float)
-
-    def dw_dlam(self, lam_vec: np.ndarray) -> np.ndarray:
-        _, df = self.f_df(self.x(lam_vec))
-        dw = self.A * df * self.dx_dlam
-        dw = np.nan_to_num(dw, nan=0.0, posinf=0.0, neginf=0.0)
-        return dw.astype(float)
-
-    def w_max(self, grid_points: int = 801) -> np.ndarray:
-        """
-        Per-edge maximum weight w_e^max over λ ∈ [λmin, λmax], found by grid scan.
-        This is used only for diagnostic normalization J*.
-        """
-        lams = np.linspace(self.lam_min, self.lam_max, int(grid_points), dtype=float)
-        x = 2.0 * (lams - self.mid) / self.Delta  # shape (G,)
-
-        if self.kind == "linear":
-            c = math.sqrt(3.0)
-            # f_e(x) = c*s_e*x -> max over x in [-1,1] is c*|s| = c
-            f_max = c * np.ones_like(self.wbar)
-        elif self.kind == "quadratic":
-            # safer to grid over x: x∈[-1,1]
-            X = x[None, :]  # (1,G)
-            c = math.sqrt(45.0 / 4.0)
-            f_grid = c * self.s[:, None] * (X*X - 1.0/3.0)  # (m,G)
-            f_max = np.max(f_grid, axis=1)
-        else:
-            # periodic: grid scan in x-space (covers full periods because x∈[-1,1])
-            X = x[None, :]  # (1,G)
-            c = math.sqrt(2.0)
-            arg = math.pi * self.k[:, None] * X + self.phi[:, None]
-            f_grid = c * np.cos(arg)  # (m,G)
-            f_max = np.max(f_grid, axis=1)
-
-        wmax = self.wbar + self.A * f_max
-        wmax = np.nan_to_num(wmax, nan=0.0, posinf=0.0, neginf=0.0)
-        return wmax.astype(float)
-
-
 def classical_Jstar_from_wmax(cut_mask: np.ndarray, wmax: np.ndarray) -> float:
     """
     J* = max_z (cut_mask[z] @ wmax), enumerating all 2^n bitstrings.
@@ -478,71 +164,8 @@ def classical_Jstar_from_wmax(cut_mask: np.ndarray, wmax: np.ndarray) -> float:
 
 
 # ==============================================================================
-# 4) VQE simulator (statevector) + SPSA inner solver
+# VQE expectation (experiment-specific: different signature with shots/ZZ_edges)
 # ==============================================================================
-
-CNOT = np.array([[1, 0, 0, 0],
-                 [0, 1, 0, 0],
-                 [0, 0, 0, 1],
-                 [0, 0, 1, 0]], dtype=np.complex128)
-
-
-def _renorm(psi: np.ndarray) -> np.ndarray:
-    nrm = float(np.vdot(psi, psi).real)
-    if (not np.isfinite(nrm)) or nrm <= 0:
-        psi[:] = 1.0 / np.sqrt(psi.size)
-    else:
-        psi /= math.sqrt(nrm)
-    return psi
-
-
-def _apply_1q(psi: np.ndarray, gate: np.ndarray, target: int, n: int) -> np.ndarray:
-    with np.errstate(all="ignore"):
-        psi_r = psi.reshape([2] * n)
-        psi_r = np.moveaxis(psi_r, target, 0)
-        block = psi_r.reshape(2, -1).astype(np.complex128, copy=False)
-        np.nan_to_num(block, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
-        out = gate @ block
-        np.nan_to_num(out, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
-        psi_r = out.reshape([2] + [2] * (n - 1))
-        psi = np.moveaxis(psi_r, 0, target).reshape(-1)
-    return psi
-
-
-def _apply_2q(psi: np.ndarray, gate4: np.ndarray, q1: int, q2: int, n: int) -> np.ndarray:
-    if q1 == q2:
-        return psi
-    with np.errstate(all="ignore"):
-        a, b = sorted((q1, q2))
-        psi_r = psi.reshape([2] * n)
-        psi_r = np.moveaxis(psi_r, (a, b), (0, 1))
-        block = psi_r.reshape(4, -1).astype(np.complex128, copy=False)
-        np.nan_to_num(block, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
-        out = gate4 @ block
-        np.nan_to_num(out, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
-        psi_r = out.reshape(2, 2, *psi_r.shape[2:])
-        psi = np.moveaxis(psi_r, (0, 1), (a, b)).reshape(-1)
-    return psi
-
-
-def vqe_state(n: int, params: np.ndarray, L: int) -> np.ndarray:
-    K = 1 << n
-    psi = np.zeros(K, dtype=np.complex128)
-    psi[0] = 1.0
-    for l in range(L):
-        ry = params[l*(2*n): l*(2*n) + n]
-        rz = params[l*(2*n) + n: (l+1)*(2*n)]
-        for q in range(n):
-            cy, sy = math.cos(float(ry[q]) / 2.0), math.sin(float(ry[q]) / 2.0)
-            RY = np.array([[cy, -sy], [sy, cy]], dtype=np.complex128)
-            psi = _apply_1q(psi, RY, q, n)
-            cz, sz = np.exp(-0.5j * float(rz[q])), np.exp(+0.5j * float(rz[q]))
-            RZ = np.array([[cz, 0], [0, sz]], dtype=np.complex128)
-            psi = _apply_1q(psi, RZ, q, n)
-        for q in range(n):
-            psi = _apply_2q(psi, CNOT, q, (q + 1) % n, n)
-        psi = _renorm(psi)
-    return psi
 
 
 def vqe_expect(
@@ -603,58 +226,9 @@ def vqe_energy(
     return -J
 
 
-def spsa_minimize(
-    energy_fun,
-    p0: np.ndarray,
-    bounds: List[Tuple[float, float]],
-    iters: int,
-    seed: int,
-    a: float = 0.2,
-    c: float = 0.12,
-    A: float = 20.0,
-    alpha: float = 0.602,
-    gamma: float = 0.101,
-):
-    """
-    Returns: best_p, best_E, evals_used
-    Per SPSA iter: Ep, Em, E -> 3 energy evaluations.
-    """
-    rng = np.random.default_rng(to_uint_seed(seed))
-    p = p0.astype(float).copy()
-    lo = np.array([b[0] for b in bounds], float)
-    hi = np.array([b[1] for b in bounds], float)
-
-    best_p = p.copy()
-    best_E = float("inf")
-    evals = 0
-
-    for k in range(1, iters + 1):
-        ak = a / ((k + A) ** alpha)
-        ck = c / (k ** gamma)
-        delta = rng.choice([-1.0, 1.0], size=p.size)
-
-        Ep = float(energy_fun(np.clip(p + ck * delta, lo, hi)))
-        Em = float(energy_fun(np.clip(p - ck * delta, lo, hi)))
-        evals += 2
-
-        if (not np.isfinite(Ep)) or (not np.isfinite(Em)) or ck <= 0:
-            ghat = np.zeros_like(p)
-        else:
-            ghat = (Ep - Em) / (2.0 * ck) * delta
-
-        p = np.clip(p - ak * ghat, lo, hi)
-
-        E = float(energy_fun(p))
-        evals += 1
-        if np.isfinite(E) and E < best_E:
-            best_E = E
-            best_p = p.copy()
-
-    if not np.isfinite(best_E):
-        best_E = float(energy_fun(best_p))
-        evals += 1
-
-    return best_p, best_E, evals
+# ==============================================================================
+# Inner solver (experiment-specific)
+# ==============================================================================
 
 
 def inner_solve(
@@ -696,7 +270,10 @@ def inner_solve(
             return vqe_energy(n, pvec, L, w, ZZ_edges, cut_mask, shots, eval_rng)
 
         p_star, E_star, ev = spsa_minimize(
-            Efun, p0, bounds, iters=inner_iters,
+            Efun,
+            p0,
+            bounds,
+            iters=inner_iters,
             seed=seed_base + 17 * (r + 1),
         )
         evals_total += int(ev)
@@ -714,8 +291,9 @@ def inner_solve(
 
 
 # ==============================================================================
-# 5) Outer loops (edge-wise λ) under evaluation budget B
+# Outer loops (edge-wise λ) under evaluation budget B
 # ==============================================================================
+
 
 def auc_step(evals: np.ndarray, values: np.ndarray, budget: float) -> float:
     """
@@ -808,9 +386,16 @@ def run_outer_budget_edgewise(
         w = fam.w(lam_vec)
 
         params_c, Jc, p_cut_c, ev_c = inner_solve(
-            n=n, L=L, w=w, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
-            init_params=params, inner_iters=inner_iters, restarts=restarts,
-            seed_base=seed + 100000 * t + 111, shots=shots
+            n=n,
+            L=L,
+            w=w,
+            ZZ_edges=ZZ_edges,
+            cut_mask=cut_mask,
+            init_params=params,
+            inner_iters=inner_iters,
+            restarts=restarts,
+            seed_base=seed + 100000 * t + 111,
+            shots=shots,
         )
         params = params_c
         evals += float(ev_c)
@@ -833,9 +418,16 @@ def run_outer_budget_edgewise(
             # + perturbation solve
             w_p = fam.w(lam_p)
             params_p, Jp, _, ev_p = inner_solve(
-                n=n, L=L, w=w_p, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
-                init_params=params, inner_iters=inner_iters, restarts=restarts,
-                seed_base=seed + 100000 * t + 777, shots=shots
+                n=n,
+                L=L,
+                w=w_p,
+                ZZ_edges=ZZ_edges,
+                cut_mask=cut_mask,
+                init_params=params,
+                inner_iters=inner_iters,
+                restarts=restarts,
+                seed_base=seed + 100000 * t + 777,
+                shots=shots,
             )
             evals += float(ev_p)
             best = max(best, float(Jp))
@@ -845,9 +437,16 @@ def run_outer_budget_edgewise(
             # - perturbation solve
             w_m = fam.w(lam_m)
             params_m, Jm, _, ev_m = inner_solve(
-                n=n, L=L, w=w_m, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
-                init_params=params, inner_iters=inner_iters, restarts=restarts,
-                seed_base=seed + 100000 * t + 999, shots=shots
+                n=n,
+                L=L,
+                w=w_m,
+                ZZ_edges=ZZ_edges,
+                cut_mask=cut_mask,
+                init_params=params,
+                inner_iters=inner_iters,
+                restarts=restarts,
+                seed_base=seed + 100000 * t + 999,
+                shots=shots,
             )
             evals += float(ev_m)
             best = max(best, float(Jm))
@@ -875,7 +474,7 @@ def run_outer_budget_edgewise(
             raise ValueError("mode must be 'ID' or 'FD_SPSA'")
 
         # --- outer update (projected gradient ascent on box)
-        eta = float(eta0 / (t ** eta_pow))
+        eta = float(eta0 / (t**eta_pow))
         step = eta * g_vec
         step = np.clip(step, -float(step_clip), float(step_clip))
         lam_vec = np.clip(lam_vec + step, lam_min, lam_max)
@@ -900,8 +499,9 @@ def steps_within_budget(outer_evals: np.ndarray, budget: float) -> int:
 
 
 # ==============================================================================
-# 6) CSV / table writers
+# CSV / table writers (experiment-specific)
 # ==============================================================================
+
 
 def write_csv(path: Path, rows: List[Dict], fieldnames: List[str]):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -930,16 +530,133 @@ def write_table_tex(path: Path, summary_rows: List[Dict], caption: str, label: s
         f.write("Metric & VQE+ID & VQE+FD\\\\\n")
         f.write("\\midrule\n")
         for r in summary_rows:
-            f.write(f"{r['metric']} & {r['id_mean']:.3f}$\\pm${r['id_se']:.3f} & "
-                    f"{r['fd_mean']:.3f}$\\pm${r['fd_se']:.3f}\\\\\n")
+            f.write(
+                f"{r['metric']} & {r['id_mean']:.3f}$\\pm${r['id_se']:.3f} & "
+                f"{r['fd_mean']:.3f}$\\pm${r['fd_se']:.3f}\\\\\n"
+            )
         f.write("\\bottomrule\n")
         f.write("\\end{tabular}\n")
         f.write("\\end{table}\n")
 
 
 # ==============================================================================
-# 7) Main
+# Plotting (experiment-specific)
 # ==============================================================================
+
+
+def plot_2panel_budget_and_gain(
+    path: Path,
+    budget_grid: np.ndarray,
+    best_id_grid: np.ndarray,
+    best_fd_grid: np.ndarray,
+    auc_gain: np.ndarray,
+    m_edges: np.ndarray,
+    budget_evals: float,
+):
+    """
+    Two-panel, paper-ready figure:
+      left: mean±stderr best-so-far / J* vs evaluation budget (step-interp grid)
+      right: per-instance ΔAUC_B vs |E| (scatter only; no extra annotation)
+
+    best_*_grid: (N, G)
+    """
+    set_pub_style(grid=False)
+    b = np.asarray(budget_grid, float)
+
+    mu_id, se_id = _mean_stderr(best_id_grid, axis=0)
+    mu_fd, se_fd = _mean_stderr(best_fd_grid, axis=0)
+
+    fig, axs = plt.subplots(1, 2, figsize=(FULL_W, H_TWO), constrained_layout=True)
+
+    # Left panel: Budget curves
+    ax = axs[0]
+    ax.plot(b, mu_id, color=COLORS["ID"], label="VQE + ID")
+    ax.fill_between(b, mu_id - se_id, mu_id + se_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
+    ax.plot(b, mu_fd, color=COLORS["FD"], ls="--", label="VQE + FD")
+    ax.fill_between(b, mu_fd - se_fd, mu_fd + se_fd, color=COLORS["FD"], alpha=0.18, linewidth=0)
+    ax.set_xlabel("Energy evaluations")
+    ax.set_ylabel(r"Best-so-far $\hat F / J^*$")
+    ax.set_xlim(float(b[0]), float(b[-1]))
+    y_all = np.concatenate([mu_id, mu_fd])
+    y0 = max(0.0, float(np.nanmin(y_all) - 0.04))
+    y1 = min(1.05, float(np.nanmax(y_all) + 0.04))
+    ax.set_ylim(y0, y1)
+    ax.legend(loc="lower right", frameon=False)
+
+    # Right panel: ΔAUC vs |E|
+    ax = axs[1]
+    x = np.asarray(m_edges, float)
+    y = np.asarray(auc_gain, float)
+
+    ax.axhline(0.0, color=COLORS["GT"], lw=1.0, ls=":")
+    ax.scatter(x, y, s=22, color="#666666", alpha=0.75, edgecolors="none")
+
+    ax.set_xlabel(r"Number of edges $|E|$")
+    ax.set_ylabel(r"$\Delta \mathrm{AUC}_B$ (ID $-$ FD)")
+
+    _savefig(fig, path)
+    plt.close(fig)
+
+
+def plot_steps_bar(
+    path: Path,
+    steps_id: np.ndarray,
+    steps_fd: np.ndarray,
+):
+    """
+    Bar chart: outer steps completed within budget B (mean±stderr).
+    """
+    set_pub_style(grid=False)
+    fig, ax = plt.subplots(figsize=(COL_W, H_TWO), constrained_layout=True)
+
+    sid = np.asarray(steps_id, float)
+    sfd = np.asarray(steps_fd, float)
+
+    mu_id = float(np.nanmean(sid))
+    mu_fd = float(np.nanmean(sfd))
+    se_id = (
+        float(np.nanstd(sid, ddof=1) / math.sqrt(max(1, np.sum(np.isfinite(sid)))))
+        if np.sum(np.isfinite(sid)) > 1
+        else float("nan")
+    )
+    se_fd = (
+        float(np.nanstd(sfd, ddof=1) / math.sqrt(max(1, np.sum(np.isfinite(sfd)))))
+        if np.sum(np.isfinite(sfd)) > 1
+        else float("nan")
+    )
+
+    xs = np.array([0, 1], int)
+    mus = np.array([mu_id, mu_fd], float)
+    ses = np.array([se_id, se_fd], float)
+
+    ax.bar(xs, mus, yerr=ses, capsize=3, width=0.6, color=["#dddddd", "#dddddd"], edgecolor=["#444444", "#444444"])
+    ax.scatter([0], [mu_id], color=COLORS["ID"], s=26, zorder=5, edgecolors="white", linewidth=0.5)
+    ax.scatter([1], [mu_fd], color=COLORS["FD"], s=26, zorder=5, edgecolors="white", linewidth=0.5)
+
+    ax.set_xticks(xs)
+    ax.set_xticklabels(["ID", "FD"])
+    ax.set_ylabel(r"Outer steps within budget $B$")
+    ax.set_xlim(-0.6, 1.6)
+
+    ratio = mu_id / max(1e-12, mu_fd)
+    ax.text(
+        0.5,
+        0.98,
+        rf"steps ratio $\approx$ {ratio:.2f}$\times$",
+        transform=ax.transAxes,
+        ha="center",
+        va="top",
+        fontsize=7,
+    )
+
+    _savefig(fig, path)
+    plt.close(fig)
+
+
+# ==============================================================================
+# Main
+# ==============================================================================
+
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -978,8 +695,13 @@ def parse_args():
     p.add_argument("--budget_points", type=int, default=240, help="points in shared budget grid for plotting")
 
     # FD warm start
-    p.add_argument("--fd_warmstart", type=str, default="best", choices=["best", "center"],
-                   help="How to warm-start the next center solve in FD. 'best' uses the best of center/+/- params.")
+    p.add_argument(
+        "--fd_warmstart",
+        type=str,
+        default="best",
+        choices=["best", "center"],
+        help="How to warm-start the next center solve in FD. 'best' uses the best of center/+/- params.",
+    )
 
     return p.parse_args()
 
@@ -1023,7 +745,7 @@ def main():
         cut_mask = build_cut_mask(edges, Z)
         ZZ_edges = build_ZZ_edges(edges, Z)
 
-        fam = FamilyEdgeWise(m=m, kind=a.family, lam_bounds=(a.lam_min, a.lam_max), rng=rng, K=a.periodic_K)
+        fam = FamilyEdgeWise(m=m, kind=a.family, lam_bounds=(a.lam_min, a.lam_max), rng=rng, periodic_K=a.periodic_K)
 
         # diagnostic normalization J*
         wmax = fam.w_max(grid_points=a.wmax_grid)
@@ -1036,7 +758,11 @@ def main():
         # ID run
         hist_id = run_outer_budget_edgewise(
             mode="ID",
-            n=a.n, edges=edges, fam=fam, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
+            n=a.n,
+            edges=edges,
+            fam=fam,
+            ZZ_edges=ZZ_edges,
+            cut_mask=cut_mask,
             lam_vec0=lam_vec0,
             outer_max=a.outer_max,
             inner_iters=a.inner_iters,
@@ -1056,7 +782,11 @@ def main():
         # FD run (SPSA finite difference on F)
         hist_fd = run_outer_budget_edgewise(
             mode="FD_SPSA",
-            n=a.n, edges=edges, fam=fam, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
+            n=a.n,
+            edges=edges,
+            fam=fam,
+            ZZ_edges=ZZ_edges,
+            cut_mask=cut_mask,
             lam_vec0=lam_vec0,
             outer_max=a.outer_max,
             inner_iters=a.inner_iters,
@@ -1097,44 +827,44 @@ def main():
         steps_fd_list.append(steps_fd)
         m_edges_list.append(m)
 
-        run_rows.append({
-            "instance": r,
-            "seed": seed,
-            "family": a.family,
-            "K": float(a.periodic_K) if a.family == "periodic" else float("nan"),
-            "n": float(a.n),
-            "p_edge": float(a.p_edge),
-            "m_edges": int(m),
-            "L": int(a.L),
-            "inner_iters": int(a.inner_iters),
-            "restarts": int(a.restarts),
-            "shots": int(a.shots),
-            "budget_evals": float(a.budget_evals),
-            "c_frac": float(a.c_frac),
-            "eta0": float(a.eta0),
-            "eta_pow": float(a.eta_pow),
-            "step_clip": float(a.step_clip),
-            "fd_warmstart": a.fd_warmstart,
-            "Jstar": float(Jstar),
+        run_rows.append(
+            {
+                "instance": r,
+                "seed": seed,
+                "family": a.family,
+                "K": float(a.periodic_K) if a.family == "periodic" else float("nan"),
+                "n": float(a.n),
+                "p_edge": float(a.p_edge),
+                "m_edges": int(m),
+                "L": int(a.L),
+                "inner_iters": int(a.inner_iters),
+                "restarts": int(a.restarts),
+                "shots": int(a.shots),
+                "budget_evals": float(a.budget_evals),
+                "c_frac": float(a.c_frac),
+                "eta0": float(a.eta0),
+                "eta_pow": float(a.eta_pow),
+                "step_clip": float(a.step_clip),
+                "fd_warmstart": a.fd_warmstart,
+                "Jstar": float(Jstar),
+                "auc_id": float(auc_id),
+                "auc_fd": float(auc_fd),
+                "auc_gain": float(gain),
+                "best_final_id": float(best_final_id),
+                "best_final_fd": float(best_final_fd),
+                "steps_id": int(steps_id),
+                "steps_fd": int(steps_fd),
+                "evals_end_id": float(hist_id["evals_end"][0]),
+                "evals_end_fd": float(hist_fd["evals_end"][0]),
+            }
+        )
 
-            "auc_id": float(auc_id),
-            "auc_fd": float(auc_fd),
-            "auc_gain": float(gain),
-
-            "best_final_id": float(best_final_id),
-            "best_final_fd": float(best_final_fd),
-
-            "steps_id": int(steps_id),
-            "steps_fd": int(steps_fd),
-
-            "evals_end_id": float(hist_id["evals_end"][0]),
-            "evals_end_fd": float(hist_fd["evals_end"][0]),
-        })
-
-        print(f"[inst={r:02d} seed={seed:3d} |m|={m:2d}] "
-              f"AUC_ID={auc_id:.4f} AUC_FD={auc_fd:.4f} gain={gain:+.4f}  "
-              f"steps(ID,FD)=({steps_id},{steps_fd})  "
-              f"final(ID,FD)=({best_final_id:.3f},{best_final_fd:.3f})")
+        print(
+            f"[inst={r:02d} seed={seed:3d} |m|={m:2d}] "
+            f"AUC_ID={auc_id:.4f} AUC_FD={auc_fd:.4f} gain={gain:+.4f}  "
+            f"steps(ID,FD)=({steps_id},{steps_fd})  "
+            f"final(ID,FD)=({best_final_id:.3f},{best_final_fd:.3f})"
+        )
 
     if not run_rows:
         raise RuntimeError("No instances generated (graphs had 0 edges). Try increasing p_edge or changing seed0.")
@@ -1152,8 +882,7 @@ def main():
     steps_fd = np.asarray(steps_fd_list, float)
 
     N = best_id_grid_all.shape[0]
-    suf = (f"{a.family}_n{a.n}_B{int(a.budget_evals)}_inner{a.inner_iters}_R{a.restarts}_"
-           f"S{a.shots}_seed0{a.seed0}_N{N}")
+    suf = f"{a.family}_n{a.n}_B{int(a.budget_evals)}_inner{a.inner_iters}_R{a.restarts}_S{a.shots}_seed0{a.seed0}_N{N}"
 
     # Figure(s)
     fig_path = out / f"fig7_edgewise_budget_gain_{suf}.{a.fmt}"
@@ -1174,7 +903,11 @@ def main():
     def _summ(arr: np.ndarray):
         arr = np.asarray(arr, float)
         mu = float(np.nanmean(arr))
-        se = float(np.nanstd(arr, ddof=1) / math.sqrt(max(1, np.sum(np.isfinite(arr))))) if np.sum(np.isfinite(arr)) > 1 else float("nan")
+        se = (
+            float(np.nanstd(arr, ddof=1) / math.sqrt(max(1, np.sum(np.isfinite(arr)))))
+            if np.sum(np.isfinite(arr)) > 1
+            else float("nan")
+        )
         return mu, se
 
     best_final_id = np.array([row["best_final_id"] for row in run_rows], float)
@@ -1200,21 +933,25 @@ def main():
         w = csv.DictWriter(f, fieldnames=["metric", "id_mean", "id_stderr", "fd_mean", "fd_stderr"])
         w.writeheader()
         for rrow in summary_rows:
-            w.writerow({
-                "metric": rrow["metric"],
-                "id_mean": f"{rrow['id_mean']:.6f}",
-                "id_stderr": f"{rrow['id_se']:.6f}",
-                "fd_mean": f"{rrow['fd_mean']:.6f}",
-                "fd_stderr": f"{rrow['fd_se']:.6f}",
-            })
+            w.writerow(
+                {
+                    "metric": rrow["metric"],
+                    "id_mean": f"{rrow['id_mean']:.6f}",
+                    "id_stderr": f"{rrow['id_se']:.6f}",
+                    "fd_mean": f"{rrow['fd_mean']:.6f}",
+                    "fd_stderr": f"{rrow['fd_se']:.6f}",
+                }
+            )
 
     table_tex = out / "table7_edgewise_summary.tex"
     write_table_tex(
         table_tex,
         summary_rows,
-        caption=(f"Experiment 7 (edge-wise outer parameters). "
-                 f"Mean$\\pm$stderr over $N={N}$ random instances for a shared evaluation budget "
-                 f"$B={int(a.budget_evals)}$ (energy evaluations)."),
+        caption=(
+            f"Experiment 7 (edge-wise outer parameters). "
+            f"Mean$\\pm$stderr over $N={N}$ random instances for a shared evaluation budget "
+            f"$B={int(a.budget_evals)}$ (energy evaluations)."
+        ),
         label="tab:exp7_edgewise",
     )
 
@@ -1222,21 +959,29 @@ def main():
     txt = out / "exp7_edgewise_summary.txt"
     with txt.open("w", encoding="utf-8") as f:
         f.write("Experiment 7 — Edge-wise outer parameters (vector λ)\n")
-        f.write(f"family={a.family} | K={a.periodic_K if a.family=='periodic' else 'NA'} | n={a.n} | p_edge={a.p_edge}\n")
+        f.write(
+            f"family={a.family} | K={a.periodic_K if a.family == 'periodic' else 'NA'} | n={a.n} | p_edge={a.p_edge}\n"
+        )
         f.write(f"inner_iters={a.inner_iters} | restarts={a.restarts} | L={a.L} | shots={a.shots}\n")
         f.write(f"budget_evals={a.budget_evals} | num_instances={N} | seed0={a.seed0}\n")
         f.write(f"FD warm-start: {a.fd_warmstart}\n\n")
 
         mu_gain = float(np.mean(auc_gain[np.isfinite(auc_gain)]))
-        sem_gain = float(np.std(auc_gain[np.isfinite(auc_gain)], ddof=1) / math.sqrt(max(1, np.sum(np.isfinite(auc_gain))))) if np.sum(np.isfinite(auc_gain)) > 1 else float("nan")
+        sem_gain = (
+            float(np.std(auc_gain[np.isfinite(auc_gain)], ddof=1) / math.sqrt(max(1, np.sum(np.isfinite(auc_gain)))))
+            if np.sum(np.isfinite(auc_gain)) > 1
+            else float("nan")
+        )
         win = float(np.mean(auc_gain[np.isfinite(auc_gain)] > 0.0))
 
         f.write(f"ΔAUC_B mean (ID−FD): {mu_gain:+.6f}  (sem={sem_gain:.6f})\n")
-        f.write(f"win rate (ΔAUC>0): {100.0*win:.2f}%\n\n")
+        f.write(f"win rate (ΔAUC>0): {100.0 * win:.2f}%\n\n")
 
         for rrow in summary_rows:
-            f.write(f"{rrow['metric']}: ID={rrow['id_mean']:.4f}±{rrow['id_se']:.4f} | "
-                    f"FD={rrow['fd_mean']:.4f}±{rrow['fd_se']:.4f}\n")
+            f.write(
+                f"{rrow['metric']}: ID={rrow['id_mean']:.4f}±{rrow['id_se']:.4f} | "
+                f"FD={rrow['fd_mean']:.4f}±{rrow['fd_se']:.4f}\n"
+            )
 
         f.write("\nFiles:\n")
         f.write(f"  Figure (budget+gain): {fig_path.name}\n")

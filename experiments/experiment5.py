@@ -4,7 +4,7 @@
 exp0D_inner_budget_ablation.py
 ==============================
 
-Experiment 0D (Supplement): Inner-budget ablation (iters × restarts)
+Experiment 0D (Supplement): Inner-budget ablation (iters x restarts)
 --------------------------------------------------------------------
 
 Reviewer question:
@@ -16,8 +16,8 @@ What we do:
     - restarts     (number of independent SPSA runs; best-of-restarts chosen)
   For each grid cell, run paired outer optimization with:
     - ID        : correlator-reuse implicit differentiation (CR-ImpDiff)
-    - FD_VALUE  : black-box finite differences on the VALUE function F(λ)
-                 (requires re-solving the inner problem at λ±c per outer step)
+    - FD_VALUE  : black-box finite differences on the VALUE function F(lambda)
+                 (requires re-solving the inner problem at lambda+-c per outer step)
 
 Fairness / cost model:
   - We compare at a FIXED total evaluation budget B (energy evaluations).
@@ -31,23 +31,23 @@ Metrics:
 
 Outputs (paper-ready):
   - fig0D_inner_budget_heatmap.<fmt>
-      2 panels: (a) mean ΔAUC heatmap, (b) win-rate heatmap
+      2 panels: (a) mean dAUC heatmap, (b) win-rate heatmap
   - runs0D_inner_budget_metrics.csv
       per-instance per-cell metrics
   - table0D_inner_budget_summary.csv / .tex
-      per-cell mean ± s.e.m. summary
+      per-cell mean +- s.e.m. summary
   - exp0D_summary.txt
       compact text summary (copyable into supplement notes)
 
 Recommended minimal run (not too heavy):
-  python exp0D_inner_budget_ablation.py \
-    --out out_exp0D \
-    --kind periodic --periodic_K 6 \
-    --inner_iters_list 14,28,42 \
-    --restarts_list 1,2,4 \
-    --num_seeds 8 \
-    --budget_evals 5100 \
-    --shots 0 \
+  python exp0D_inner_budget_ablation.py \\
+    --out out_exp0D \\
+    --kind periodic --periodic_K 6 \\
+    --inner_iters_list 14,28,42 \\
+    --restarts_list 1,2,4 \\
+    --num_seeds 8 \\
+    --budget_evals 5100 \\
+    --shots 0 \\
     --fmt pdf
 
 Notes:
@@ -58,92 +58,29 @@ Notes:
 
 """
 
-import math
 import argparse
 import csv
-import warnings
-import logging
+import math
 from pathlib import Path
-from typing import Tuple, List, Dict
+from typing import Dict, List
 
-import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib as mpl
+import matplotlib.pyplot as plt
+import numpy as np
 
-
-# ------------------------------------------------------------------------------
-# Silence noisy-but-harmless fontTools PDF logs and some numpy warnings
-# ------------------------------------------------------------------------------
-warnings.filterwarnings("ignore", message=".*timestamp seems very low.*")
-warnings.filterwarnings("ignore", message=".*regarding as unix timestamp.*")
-
-_ft = logging.getLogger("fontTools")
-_ft.setLevel(logging.ERROR)
-_ft.propagate = False
-if not _ft.handlers:
-    _ft.addHandler(logging.NullHandler())
-logging.getLogger("fontTools.ttLib").setLevel(logging.ERROR)
-logging.getLogger("fontTools.subset").setLevel(logging.ERROR)
-
+from paramham.families import Family1D
+from paramham.graphs import generate_random_graph
+from paramham.io import parse_int_list
+from paramham.maxcut import build_cut_mask, build_ZZ_edges
+from paramham.maxcut import precompute_z as precompute_z_big_endian
+from paramham.plotting import FULL_W, H_COL, _savefig, set_pub_style
+from paramham.seeds import to_uint_seed
+from paramham.simulator import vqe_state
+from paramham.spsa import spsa_minimize
 
 # ==============================================================================
-# 1) Paper-ish plotting style (same spirit as main script)
+# 1) Experiment-specific plotting
 # ==============================================================================
-
-COLORS = {
-    "ID":  "#D62728",  # red
-    "FD":  "#1F77B4",  # blue
-    "GT":  "#000000",
-}
-
-COL_W, FULL_W = 3.37, 6.95
-H_COL = 2.8
-
-
-def set_pub_style(grid: bool = False):
-    mpl.rcdefaults()
-    mpl.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["DejaVu Serif", "Times New Roman", "Liberation Serif"],
-        "font.size": 8,
-        "axes.labelsize": 9,
-        "legend.fontsize": 7,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
-        "mathtext.fontset": "cm",
-        "axes.formatter.use_mathtext": True,
-        "lines.linewidth": 1.5,
-        "xtick.direction": "in",
-        "ytick.direction": "in",
-        "xtick.top": True,
-        "ytick.right": True,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "axes.linewidth": 0.8,
-        "axes.grid": grid,
-        "grid.alpha": 0.15,
-        "grid.linestyle": "--",
-        "grid.linewidth": 0.5,
-        "pdf.fonttype": 42,
-        "ps.fonttype": 42,
-        "svg.fonttype": "none",
-        "savefig.bbox": "tight",
-        "savefig.pad_inches": 0.03,
-        "savefig.transparent": False,
-        "figure.dpi": 300,
-        "figure.facecolor": "white",
-        "axes.facecolor": "white",
-    })
-
-
-def _savefig(fig: plt.Figure, path: Path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    ext = path.suffix.lower()
-    if ext in [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".pdf"]:
-        fig.savefig(path, dpi=600)
-    else:
-        fig.savefig(path)
-
 
 
 def plot_inner_budget_heatmap(
@@ -155,7 +92,7 @@ def plot_inner_budget_heatmap(
 ):
     """
     Paper-ready: 2-panel figure
-      (a) mean ΔAUC heatmap, (b) win-rate heatmap
+      (a) mean dAUC heatmap, (b) win-rate heatmap
     No titles; includes axis labels and colorbars.
     Fix: panel (b) no longer unreadable (auto text color + better colormap).
     """
@@ -163,7 +100,7 @@ def plot_inner_budget_heatmap(
     fig, axs = plt.subplots(1, 2, figsize=(FULL_W, H_COL), constrained_layout=True)
 
     # -----------------------------
-    # Panel (a): ΔAUC
+    # Panel (a): dAUC
     # -----------------------------
     ax = axs[0]
     vmax = float(np.max(np.abs(auc_gain_mean))) if np.isfinite(auc_gain_mean).any() else 1.0
@@ -205,7 +142,7 @@ def plot_inner_budget_heatmap(
     ax = axs[1]
 
     # pick a readable colormap (choose ONE)
-    cmap_wr = plt.get_cmap("Blues")   # alt: "Greys_r" or "RdBu_r"
+    cmap_wr = plt.get_cmap("Blues")  # alt: "Greys_r" or "RdBu_r"
     norm_wr = mpl.colors.Normalize(vmin=0.0, vmax=1.0)
 
     im1 = ax.imshow(
@@ -230,14 +167,10 @@ def plot_inner_budget_heatmap(
                 rgba = cmap_wr(norm_wr(val))
                 lum = 0.299 * rgba[0] + 0.587 * rgba[1] + 0.114 * rgba[2]
                 txt_color = "black" if lum > 0.6 else "white"
-                ax.text(
-                    ix, iy, f"{100*val:.0f}%",
-                    ha="center", va="center",
-                    fontsize=7, color=txt_color
-                )
+                ax.text(ix, iy, f"{100 * val:.0f}%", ha="center", va="center", fontsize=7, color=txt_color)
 
     cb1 = fig.colorbar(im1, ax=ax, fraction=0.046, pad=0.04)
-    cb1.set_label("Win rate (ΔAUC>0)")
+    cb1.set_label("Win rate (dAUC>0)")
 
     # panel labels (small, unobtrusive)
     axs[0].text(0.02, 0.98, "(a)", transform=axs[0].transAxes, ha="left", va="top")
@@ -247,199 +180,9 @@ def plot_inner_budget_heatmap(
     plt.close(fig)
 
 
-
 # ==============================================================================
-# 2) Utilities + problem instance + canonical family
+# 2) VQE expectation (experiment-specific: shot-noise path + ZZ_edges arg)
 # ==============================================================================
-
-def to_uint_seed(seed: int) -> int:
-    return int(seed) % (2**32 - 1)
-
-
-def parse_int_list(s: str) -> List[int]:
-    s = s.strip()
-    if not s:
-        return []
-    return [int(x) for x in s.split(",") if x.strip()]
-
-
-def generate_random_graph(n: int, p_edge: float, rng: np.random.Generator):
-    edges = []
-    for i in range(n):
-        for j in range(i + 1, n):
-            if rng.random() < p_edge:
-                edges.append((i, j))
-    return edges
-
-
-def precompute_z_big_endian(n: int) -> np.ndarray:
-    """
-    Z[q, state] ∈ {+1,-1} for big-endian ordering.
-    """
-    K = 1 << n
-    idx = np.arange(K, dtype=np.uint32)
-    Z = np.empty((n, K), dtype=np.int8)
-    for q in range(n):
-        bitpos = n - 1 - q
-        Z[q] = 1 - 2 * ((idx >> bitpos) & 1).astype(np.int8)
-    return Z
-
-
-def build_cut_mask(edges, Z: np.ndarray) -> np.ndarray:
-    """
-    cut_mask[state, e] = (1 - Z_i Z_j)/2 ∈ {0,1}
-    """
-    _, K = Z.shape
-    m = len(edges)
-    cut = np.empty((K, m), dtype=np.float64)
-    for e, (i, j) in enumerate(edges):
-        cut[:, e] = 0.5 * (1.0 - (Z[i] * Z[j]).astype(np.float64))
-    return cut
-
-
-def build_ZZ_edges(edges, Z: np.ndarray) -> np.ndarray:
-    """
-    ZZ[e, state] = Z_i(state) * Z_j(state) ∈ {+1,-1}
-    """
-    _, K = Z.shape
-    m = len(edges)
-    ZZ = np.empty((m, K), dtype=np.int8)
-    for e, (i, j) in enumerate(edges):
-        ZZ[e] = (Z[i] * Z[j]).astype(np.int8)
-    return ZZ
-
-
-class Family1D:
-    """
-    Canonical families:
-      linear:    f = sqrt(3) s x
-      quadratic: f = sqrt(45/4) s (x^2 - 1/3)
-      periodic:  f = sqrt(2) cos(pi k x + phi)
-    All mean-zero and RMS-normalized under x~Unif[-1,1] (periodic in expectation over phi).
-    """
-    def __init__(self, m: int, kind: str, lam_bounds: Tuple[float, float],
-                 rng: np.random.Generator, K: int = 6):
-        self.kind = kind
-        self.lam_min, self.lam_max = map(float, lam_bounds)
-        self.mid = 0.5 * (self.lam_min + self.lam_max)
-        self.Delta = max(1e-12, self.lam_max - self.lam_min)
-        self.dx_dlam = 2.0 / self.Delta
-
-        # positive baseline + moderate amplitude
-        self.wbar = rng.uniform(2.0, 3.0, size=m).astype(float)
-        self.A = rng.uniform(0.3, 0.8, size=m).astype(float)
-
-        if kind in ("linear", "quadratic"):
-            self.s = rng.choice([-1.0, +1.0], size=m).astype(float)
-            self.k = None
-            self.phi = None
-        elif kind == "periodic":
-            self.s = None
-            self.k = rng.integers(1, K + 1, size=m).astype(float)
-            self.phi = rng.uniform(0.0, 2*np.pi, size=m).astype(float)
-        else:
-            raise ValueError("kind must be linear/quadratic/periodic")
-
-    def x(self, lam: float) -> float:
-        return 2.0 * (float(lam) - self.mid) / self.Delta
-
-    def f_df(self, x: float):
-        x = float(x)
-        if self.kind == "linear":
-            c = math.sqrt(3.0)
-            f = c * self.s * x
-            df = c * self.s
-        elif self.kind == "quadratic":
-            c = math.sqrt(45.0 / 4.0)
-            f = c * self.s * (x*x - 1.0/3.0)
-            df = c * self.s * (2.0 * x)
-        else:
-            c = math.sqrt(2.0)
-            arg = math.pi * self.k * x + self.phi
-            f = c * np.cos(arg)
-            df = c * (-math.pi * self.k) * np.sin(arg)
-        return f, df
-
-    def w(self, lam: float) -> np.ndarray:
-        f, _ = self.f_df(self.x(lam))
-        w = self.wbar + self.A * f
-        # hard safety
-        w = np.nan_to_num(w, nan=0.0, posinf=0.0, neginf=0.0)
-        return w.astype(float)
-
-    def dw_dlam(self, lam: float) -> np.ndarray:
-        _, df = self.f_df(self.x(lam))
-        dw = self.A * df * self.dx_dlam
-        dw = np.nan_to_num(dw, nan=0.0, posinf=0.0, neginf=0.0)
-        return dw.astype(float)
-
-
-# ==============================================================================
-# 3) VQE simulator (statevector) + SPSA inner
-# ==============================================================================
-
-CNOT = np.array([[1, 0, 0, 0],
-                 [0, 1, 0, 0],
-                 [0, 0, 0, 1],
-                 [0, 0, 1, 0]], dtype=np.complex128)
-
-
-def _renorm(psi: np.ndarray) -> np.ndarray:
-    nrm = float(np.vdot(psi, psi).real)
-    if (not np.isfinite(nrm)) or nrm <= 0:
-        psi[:] = 1.0 / np.sqrt(psi.size)
-    else:
-        psi /= math.sqrt(nrm)
-    return psi
-
-
-def _apply_1q(psi: np.ndarray, gate: np.ndarray, target: int, n: int) -> np.ndarray:
-    with np.errstate(all="ignore"):
-        psi_r = psi.reshape([2] * n)
-        psi_r = np.moveaxis(psi_r, target, 0)
-        block = psi_r.reshape(2, -1).astype(np.complex128, copy=False)
-        np.nan_to_num(block, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
-        out = gate @ block
-        np.nan_to_num(out, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
-        psi_r = out.reshape([2] + [2] * (n - 1))
-        psi = np.moveaxis(psi_r, 0, target).reshape(-1)
-    return psi
-
-
-def _apply_2q(psi: np.ndarray, gate4: np.ndarray, q1: int, q2: int, n: int) -> np.ndarray:
-    if q1 == q2:
-        return psi
-    with np.errstate(all="ignore"):
-        a, b = sorted((q1, q2))
-        psi_r = psi.reshape([2] * n)
-        psi_r = np.moveaxis(psi_r, (a, b), (0, 1))
-        block = psi_r.reshape(4, -1).astype(np.complex128, copy=False)
-        np.nan_to_num(block, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
-        out = gate4 @ block
-        np.nan_to_num(out, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
-        psi_r = out.reshape(2, 2, *psi_r.shape[2:])
-        psi = np.moveaxis(psi_r, (0, 1), (a, b)).reshape(-1)
-    return psi
-
-
-def vqe_state(n: int, params: np.ndarray, L: int) -> np.ndarray:
-    K = 1 << n
-    psi = np.zeros(K, dtype=np.complex128)
-    psi[0] = 1.0
-    for l in range(L):
-        ry = params[l*(2*n): l*(2*n) + n]
-        rz = params[l*(2*n) + n: (l+1)*(2*n)]
-        for q in range(n):
-            cy, sy = math.cos(float(ry[q]) / 2.0), math.sin(float(ry[q]) / 2.0)
-            RY = np.array([[cy, -sy], [sy, cy]], dtype=np.complex128)
-            psi = _apply_1q(psi, RY, q, n)
-            cz, sz = np.exp(-0.5j * float(rz[q])), np.exp(+0.5j * float(rz[q]))
-            RZ = np.array([[cz, 0], [0, sz]], dtype=np.complex128)
-            psi = _apply_1q(psi, RZ, q, n)
-        for q in range(n):
-            psi = _apply_2q(psi, CNOT, q, (q + 1) % n, n)
-        psi = _renorm(psi)
-    return psi
 
 
 def vqe_expect(
@@ -503,58 +246,9 @@ def vqe_energy(
     return -J
 
 
-def spsa_minimize(
-    energy_fun,
-    p0: np.ndarray,
-    bounds: List[Tuple[float, float]],
-    iters: int,
-    seed: int,
-    a: float = 0.2,
-    c: float = 0.12,
-    A: float = 20.0,
-    alpha: float = 0.602,
-    gamma: float = 0.101
-):
-    """
-    Returns: best_p, best_E, evals_used
-    Per SPSA iter: Ep, Em, E -> 3 energy evaluations.
-    """
-    rng = np.random.default_rng(to_uint_seed(seed))
-    p = p0.astype(float).copy()
-    lo = np.array([b[0] for b in bounds], float)
-    hi = np.array([b[1] for b in bounds], float)
-
-    best_p = p.copy()
-    best_E = float("inf")
-    evals = 0
-
-    for k in range(1, iters + 1):
-        ak = a / ((k + A) ** alpha)
-        ck = c / (k ** gamma)
-        delta = rng.choice([-1.0, 1.0], size=p.size)
-
-        Ep = float(energy_fun(np.clip(p + ck * delta, lo, hi)))
-        Em = float(energy_fun(np.clip(p - ck * delta, lo, hi)))
-        evals += 2
-
-        if (not np.isfinite(Ep)) or (not np.isfinite(Em)) or ck <= 0:
-            ghat = np.zeros_like(p)
-        else:
-            ghat = (Ep - Em) / (2.0 * ck) * delta
-
-        p = np.clip(p - ak * ghat, lo, hi)
-
-        E = float(energy_fun(p))
-        evals += 1
-        if np.isfinite(E) and E < best_E:
-            best_E = E
-            best_p = p.copy()
-
-    if not np.isfinite(best_E):
-        best_E = float(energy_fun(best_p))
-        evals += 1
-
-    return best_p, best_E, evals
+# ==============================================================================
+# 3) Inner solver (experiment-specific restart logic)
+# ==============================================================================
 
 
 def inner_solve(
@@ -614,13 +308,10 @@ def inner_solve(
 # 4) Classical diagnostic scale J* and outer loops with budget
 # ==============================================================================
 
-def classical_Jstar_max(
-    fam: Family1D,
-    cut_mask: np.ndarray,
-    grid_points: int
-) -> float:
+
+def classical_Jstar_max(fam: Family1D, cut_mask: np.ndarray, grid_points: int) -> float:
     """
-    J* = max_{λ in grid} max_z J(z;λ)
+    J* = max_{lambda in grid} max_z J(z;lambda)
     (Used only for normalization / diagnostic.)
     """
     lams = np.linspace(fam.lam_min, fam.lam_max, int(grid_points))
@@ -655,7 +346,7 @@ def run_outer_budget(
     c_frac: float,
     shots: int,
     budget_evals: float,
-    Jstar: float
+    Jstar: float,
 ) -> Dict[str, np.ndarray]:
     """
     Runs outer optimization until budget or outer_max.
@@ -680,9 +371,16 @@ def run_outer_budget(
         w = fam.w(lam)
 
         params, J, p_cut, ev_in = inner_solve(
-            n=n, L=L, w=w, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
-            init_params=params, inner_iters=inner_iters, restarts=restarts,
-            seed_base=seed + 100000 * t + 111, shots=shots
+            n=n,
+            L=L,
+            w=w,
+            ZZ_edges=ZZ_edges,
+            cut_mask=cut_mask,
+            init_params=params,
+            inner_iters=inner_iters,
+            restarts=restarts,
+            seed_base=seed + 100000 * t + 111,
+            shots=shots,
         )
         evals += float(ev_in)
         best = max(best, float(J))
@@ -699,9 +397,16 @@ def run_outer_budget(
             # +c value query
             w_p = fam.w(lp)
             p_p, Jp, _, evp = inner_solve(
-                n=n, L=L, w=w_p, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
-                init_params=params, inner_iters=inner_iters, restarts=restarts,
-                seed_base=seed + 100000 * t + 777, shots=shots
+                n=n,
+                L=L,
+                w=w_p,
+                ZZ_edges=ZZ_edges,
+                cut_mask=cut_mask,
+                init_params=params,
+                inner_iters=inner_iters,
+                restarts=restarts,
+                seed_base=seed + 100000 * t + 777,
+                shots=shots,
             )
             evals += float(evp)
             best = max(best, float(Jp))
@@ -711,9 +416,16 @@ def run_outer_budget(
             # -c value query
             w_m = fam.w(lm)
             p_m, Jm, _, evm = inner_solve(
-                n=n, L=L, w=w_m, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
-                init_params=params, inner_iters=inner_iters, restarts=restarts,
-                seed_base=seed + 100000 * t + 999, shots=shots
+                n=n,
+                L=L,
+                w=w_m,
+                ZZ_edges=ZZ_edges,
+                cut_mask=cut_mask,
+                init_params=params,
+                inner_iters=inner_iters,
+                restarts=restarts,
+                seed_base=seed + 100000 * t + 999,
+                shots=shots,
             )
             evals += float(evm)
             best = max(best, float(Jm))
@@ -731,7 +443,7 @@ def run_outer_budget(
             raise ValueError("mode must be ID or FD_VALUE")
 
         # outer update
-        eta = float(eta0 / (t ** eta_pow))
+        eta = float(eta0 / (t**eta_pow))
         step = float(eta * g)
         step = float(np.clip(step, -step_clip, step_clip))
         lam = float(np.clip(lam + step, lam_min, lam_max))
@@ -774,7 +486,7 @@ def auc_step(evals: np.ndarray, values: np.ndarray, budget: float) -> float:
         evals = np.append(evals, budget)
         values = np.append(values, values[-1])
 
-    # step integral: sum (Δx * y_i)
+    # step integral: sum (dx * y_i)
     dx = np.diff(evals)
     area = float(np.sum(dx * values[:-1]))
     return area / float(budget)
@@ -783,6 +495,7 @@ def auc_step(evals: np.ndarray, values: np.ndarray, budget: float) -> float:
 # ==============================================================================
 # 5) I/O helpers: CSV + LaTeX table
 # ==============================================================================
+
 
 def write_csv(path: Path, rows: List[Dict], fieldnames: List[str]):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -796,7 +509,7 @@ def write_csv(path: Path, rows: List[Dict], fieldnames: List[str]):
 def write_table_tex(path: Path, rows: List[Dict], caption: str, label: str):
     """
     Minimal booktabs LaTeX table:
-      restarts, inner_iters, mean_auc_gain ± sem, win_rate
+      restarts, inner_iters, mean_auc_gain +- sem, win_rate
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -810,9 +523,11 @@ def write_table_tex(path: Path, rows: List[Dict], caption: str, label: str):
         f.write("Restarts & Inner iters & $\\Delta\\mathrm{AUC}_B$ (mean $\\pm$ s.e.m.) & Win rate \\\\\n")
         f.write("\\midrule\n")
         for r in rows:
-            f.write(f"{r['restarts']} & {r['inner_iters']} & "
-                    f"{r['auc_gain_mean']:+.4f} $\\pm$ {r['auc_gain_sem']:.4f} & "
-                    f"{100.0*r['win_rate']:.0f}\\% \\\\\n")
+            f.write(
+                f"{r['restarts']} & {r['inner_iters']} & "
+                f"{r['auc_gain_mean']:+.4f} $\\pm$ {r['auc_gain_sem']:.4f} & "
+                f"{100.0 * r['win_rate']:.0f}\\% \\\\\n"
+            )
         f.write("\\bottomrule\n")
         f.write("\\end{tabular}\n")
         f.write("\\end{table}\n")
@@ -821,6 +536,7 @@ def write_table_tex(path: Path, rows: List[Dict], caption: str, label: str):
 # ==============================================================================
 # 6) Main
 # ==============================================================================
+
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -904,7 +620,8 @@ def main():
             kind=a.kind,
             lam_bounds=(a.lam_min, a.lam_max),
             rng=rng,
-            K=a.periodic_K
+            periodic_K=a.periodic_K,
+            safety_bounds=False,
         )
 
         # diagnostic normalization J*
@@ -917,7 +634,11 @@ def main():
                 # ID run
                 hist_id = run_outer_budget(
                     mode="ID",
-                    n=a.n, edges=edges, fam=fam, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
+                    n=a.n,
+                    edges=edges,
+                    fam=fam,
+                    ZZ_edges=ZZ_edges,
+                    cut_mask=cut_mask,
                     lam0=a.lam0,
                     outer_max=a.outer_max,
                     inner_iters=inner_iters,
@@ -930,13 +651,17 @@ def main():
                     c_frac=a.c_frac,
                     shots=a.shots,
                     budget_evals=a.budget_evals,
-                    Jstar=Jstar
+                    Jstar=Jstar,
                 )
 
                 # FD run
                 hist_fd = run_outer_budget(
                     mode="FD_VALUE",
-                    n=a.n, edges=edges, fam=fam, ZZ_edges=ZZ_edges, cut_mask=cut_mask,
+                    n=a.n,
+                    edges=edges,
+                    fam=fam,
+                    ZZ_edges=ZZ_edges,
+                    cut_mask=cut_mask,
                     lam0=a.lam0,
                     outer_max=a.outer_max,
                     inner_iters=inner_iters,
@@ -949,7 +674,7 @@ def main():
                     c_frac=a.c_frac,
                     shots=a.shots,
                     budget_evals=a.budget_evals,
-                    Jstar=Jstar
+                    Jstar=Jstar,
                 )
 
                 auc_id = auc_step(hist_id["evals"], hist_id["best_norm"], a.budget_evals)
@@ -959,34 +684,34 @@ def main():
                 auc_gain[iy, ix, s_idx] = gain
                 win[iy, ix, s_idx] = 1.0 if gain > 0 else 0.0
 
-                run_rows.append({
-                    "seed": seed,
-                    "kind": a.kind,
-                    "periodic_K": a.periodic_K,
-                    "n": a.n,
-                    "p_edge": a.p_edge,
-                    "shots": a.shots,
-                    "budget_evals": a.budget_evals,
-                    "inner_iters": inner_iters,
-                    "restarts": restarts,
-                    "Jstar": Jstar,
-                    "auc_id": auc_id,
-                    "auc_fd": auc_fd,
-                    "auc_gain": gain,
-                    "evals_end_id": float(hist_id["evals_end"][0]),
-                    "evals_end_fd": float(hist_fd["evals_end"][0]),
-                })
+                run_rows.append(
+                    {
+                        "seed": seed,
+                        "kind": a.kind,
+                        "periodic_K": a.periodic_K,
+                        "n": a.n,
+                        "p_edge": a.p_edge,
+                        "shots": a.shots,
+                        "budget_evals": a.budget_evals,
+                        "inner_iters": inner_iters,
+                        "restarts": restarts,
+                        "Jstar": Jstar,
+                        "auc_id": auc_id,
+                        "auc_fd": auc_fd,
+                        "auc_gain": gain,
+                        "evals_end_id": float(hist_id["evals_end"][0]),
+                        "evals_end_fd": float(hist_fd["evals_end"][0]),
+                    }
+                )
 
-                print(f"[seed={seed:3d}] iters={inner_iters:3d} restarts={restarts:2d} "
-                      f"AUC_ID={auc_id:.4f} AUC_FD={auc_fd:.4f} gain={gain:+.4f}")
+                print(
+                    f"[seed={seed:3d}] iters={inner_iters:3d} restarts={restarts:2d} "
+                    f"AUC_ID={auc_id:.4f} AUC_FD={auc_fd:.4f} gain={gain:+.4f}"
+                )
 
     # save per-run CSV
     runs_csv = out / "runs0D_inner_budget_metrics.csv"
-    write_csv(
-        runs_csv,
-        run_rows,
-        fieldnames=list(run_rows[0].keys()) if run_rows else []
-    )
+    write_csv(runs_csv, run_rows, fieldnames=list(run_rows[0].keys()) if run_rows else [])
 
     # aggregate per-cell
     summary_rows = []
@@ -1010,30 +735,34 @@ def main():
             auc_gain_mean[iy, ix] = mean
             win_rate[iy, ix] = wr
 
-            summary_rows.append({
-                "restarts": int(restarts),
-                "inner_iters": int(inner_iters),
-                "N": int(N),
-                "auc_gain_mean": mean,
-                "auc_gain_sem": sem,
-                "win_rate": wr,
-            })
+            summary_rows.append(
+                {
+                    "restarts": int(restarts),
+                    "inner_iters": int(inner_iters),
+                    "N": int(N),
+                    "auc_gain_mean": mean,
+                    "auc_gain_sem": sem,
+                    "win_rate": wr,
+                }
+            )
 
     # save summary table
     summary_csv = out / "table0D_inner_budget_summary.csv"
     write_csv(
         summary_csv,
         summary_rows,
-        fieldnames=["restarts", "inner_iters", "N", "auc_gain_mean", "auc_gain_sem", "win_rate"]
+        fieldnames=["restarts", "inner_iters", "N", "auc_gain_mean", "auc_gain_sem", "win_rate"],
     )
     summary_tex = out / "table0D_inner_budget_summary.tex"
     write_table_tex(
         summary_tex,
         summary_rows,
-        caption=("0D inner-budget ablation (periodic family by default). "
-                 "Each cell reports mean±s.e.m. of ΔAUC_B = AUC_ID − AUC_BB-FD "
-                 "at fixed evaluation budget B, over paired random instances."),
-        label="tab:0D_inner_budget"
+        caption=(
+            "0D inner-budget ablation (periodic family by default). "
+            "Each cell reports mean+-s.e.m. of dAUC_B = AUC_ID - AUC_BB-FD "
+            "at fixed evaluation budget B, over paired random instances."
+        ),
+        label="tab:0D_inner_budget",
     )
 
     # figure
@@ -1043,13 +772,13 @@ def main():
         inner_iters_list=inner_iters_list,
         restarts_list=restarts_list,
         auc_gain_mean=auc_gain_mean,
-        win_rate=win_rate
+        win_rate=win_rate,
     )
 
     # compact text summary
     txt = out / "exp0D_summary.txt"
     with txt.open("w", encoding="utf-8") as f:
-        f.write("Experiment 0D — Inner-budget ablation\n")
+        f.write("Experiment 0D -- Inner-budget ablation\n")
         f.write(f"kind={a.kind} | periodic_K={a.periodic_K} | n={a.n} | p_edge={a.p_edge}\n")
         f.write(f"shots={a.shots} | budget_evals={a.budget_evals} | seeds={a.num_seeds}\n")
         f.write(f"inner_iters_list={inner_iters_list}\n")
@@ -1058,13 +787,15 @@ def main():
         all_g = auc_gain.reshape(-1, Sn)
         flat = all_g[np.isfinite(all_g)]
         if flat.size:
-            f.write(f"Overall mean ΔAUC over all cells: {float(np.mean(flat)):+.4f}\n")
+            f.write(f"Overall mean dAUC over all cells: {float(np.mean(flat)):+.4f}\n")
             f.write(f"Overall win rate over all cells: {float(np.mean(flat > 0)) * 100:.1f}%\n")
-        f.write("\nPer-cell summary (restarts, iters, mean±sem, win_rate):\n")
+        f.write("\nPer-cell summary (restarts, iters, mean+-sem, win_rate):\n")
         for r in summary_rows:
-            f.write(f"  r={r['restarts']}, it={r['inner_iters']}: "
-                    f"{r['auc_gain_mean']:+.4f} ± {r['auc_gain_sem']:.4f}, "
-                    f"{100.0*r['win_rate']:.0f}%\n")
+            f.write(
+                f"  r={r['restarts']}, it={r['inner_iters']}: "
+                f"{r['auc_gain_mean']:+.4f} +- {r['auc_gain_sem']:.4f}, "
+                f"{100.0 * r['win_rate']:.0f}%\n"
+            )
 
     print("\nSaved to:", out.resolve())
     print("Figure:", fig_path.name)

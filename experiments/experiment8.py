@@ -54,119 +54,32 @@ Notes
   graph classes we map p to a target expected degree d = p*(n-1).
 """
 
-import math
 import argparse
-import warnings
-import logging
 import csv
+import math
 from pathlib import Path
-from typing import Tuple, Dict, List, Optional
+from typing import Dict, List
 
-import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib as mpl
+import numpy as np
 
+from paramham.families import Family1D
+from paramham.graphs import generate_graph
+from paramham.io import parse_float_list, parse_int_list
+from paramham.maxcut import build_cut_mask, classical_Jstar, precompute_z
+from paramham.plotting import COL_W, _savefig, set_pub_style
+from paramham.seeds import to_uint_seed
+from paramham.simulator import expect_J, vqe_state
+from paramham.spsa import spsa_minimize
 
-# ------------------------------------------------------------------------------
-# Silence known noisy-but-harmless messages (fontTools uses logging)
-# ------------------------------------------------------------------------------
-warnings.filterwarnings("ignore", message=".*timestamp seems very low.*")
-warnings.filterwarnings("ignore", message=".*regarding as unix timestamp.*")
-
-_ft = logging.getLogger("fontTools")
-_ft.setLevel(logging.ERROR)
-_ft.propagate = False
-if not _ft.handlers:
-    _ft.addHandler(logging.NullHandler())
-logging.getLogger("fontTools.ttLib").setLevel(logging.ERROR)
-logging.getLogger("fontTools.subset").setLevel(logging.ERROR)
-
-
-# ==============================================================================
-# 1) Minimal publication plotting (Nature-ish)
-# ==============================================================================
-
-COL_W = 6.95  # inches (two-column)
-
-
-def set_pub_style(grid: bool = False):
-    mpl.rcdefaults()
-    mpl.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["DejaVu Serif", "Times New Roman", "Liberation Serif"],
-        "font.size": 8,
-        "axes.labelsize": 9,
-        "axes.titlesize": 9,
-        "legend.fontsize": 7,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
-        "mathtext.fontset": "cm",
-        "axes.formatter.use_mathtext": True,
-        "lines.linewidth": 1.2,
-        "xtick.direction": "in",
-        "ytick.direction": "in",
-        "xtick.top": False,
-        "ytick.right": False,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "axes.linewidth": 0.8,
-        "axes.grid": grid,
-        "grid.alpha": 0.15,
-        "grid.linestyle": "--",
-        "grid.linewidth": 0.5,
-        "pdf.fonttype": 42,
-        "ps.fonttype": 42,
-        "svg.fonttype": "none",
-        "savefig.bbox": "tight",
-        "savefig.pad_inches": 0.03,
-        "savefig.transparent": False,
-        "figure.dpi": 300,
-        "figure.facecolor": "white",
-        "axes.facecolor": "white",
-    })
-
-
-def _savefig(fig: plt.Figure, path: Path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    ext = path.suffix.lower()
-    if ext in [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".pdf"]:
-        fig.savefig(path, dpi=600)
-    else:
-        fig.savefig(path)
-    plt.close(fig)
+# Alias: the shared module calls it precompute_z but this experiment
+# historically used the name precompute_z_big_endian.
+precompute_z_big_endian = precompute_z
 
 
 # ==============================================================================
-# 2) Utilities
+# Experiment-specific helpers
 # ==============================================================================
-
-
-def to_uint_seed(seed: int) -> int:
-    return int(seed) % (2**32 - 1)
-
-
-def parse_int_list(s: str) -> List[int]:
-    s = (s or "").strip()
-    if not s:
-        return []
-    out = []
-    for chunk in s.split(","):
-        chunk = chunk.strip()
-        if chunk:
-            out.append(int(chunk))
-    return out
-
-
-def parse_float_list(s: str) -> List[float]:
-    s = (s or "").strip()
-    if not s:
-        return []
-    out = []
-    for chunk in s.split(","):
-        chunk = chunk.strip()
-        if chunk:
-            out.append(float(chunk))
-    return out
 
 
 def step_auc(evals: np.ndarray, y_step: np.ndarray, x_max: float) -> float:
@@ -211,342 +124,8 @@ def write_csv(path: Path, rows: List[Dict]):
 
 
 # ==============================================================================
-# 3) Graph generators (graph classes)
+# VQE energy (experiment-specific: uses cut_mask, not ZZ)
 # ==============================================================================
-
-
-def _edge_key(i: int, j: int) -> Tuple[int, int]:
-    return (i, j) if i < j else (j, i)
-
-
-def generate_er_graph(n: int, p_edge: float, rng: np.random.Generator) -> List[Tuple[int, int]]:
-    edges = []
-    for i in range(n):
-        for j in range(i + 1, n):
-            if rng.random() < p_edge:
-                edges.append((i, j))
-    return edges
-
-
-def generate_regular_ring(n: int, k: int) -> List[Tuple[int, int]]:
-    """Undirected ring-lattice with degree k (k must be even)."""
-    k = int(k)
-    k = max(0, min(k, n - 1))
-    if k % 2 == 1:
-        k -= 1
-    if k <= 0:
-        return []
-    half = k // 2
-    edges = set()
-    for i in range(n):
-        for d in range(1, half + 1):
-            j = (i + d) % n
-            edges.add(_edge_key(i, j))
-    return sorted(edges)
-
-
-def generate_watts_strogatz(n: int, k: int, beta: float, rng: np.random.Generator) -> List[Tuple[int, int]]:
-    """Watts–Strogatz small-world: start from ring lattice, rewire each edge with prob beta."""
-    beta = float(np.clip(beta, 0.0, 1.0))
-    edges = generate_regular_ring(n, k)
-    if not edges or beta <= 0:
-        return edges
-
-    # adjacency for fast checks
-    adj = {i: set() for i in range(n)}
-    for i, j in edges:
-        adj[i].add(j)
-        adj[j].add(i)
-
-    new_edges = set(edges)
-
-    for (i, j) in list(edges):
-        if rng.random() >= beta:
-            continue
-        # rewire endpoint j -> k_new (keep i fixed)
-        # remove old edge
-        new_edges.discard(_edge_key(i, j))
-        adj[i].discard(j)
-        adj[j].discard(i)
-
-        # choose new node not equal i and not already connected
-        candidates = [x for x in range(n) if x != i and x not in adj[i]]
-        if not candidates:
-            # revert
-            new_edges.add(_edge_key(i, j))
-            adj[i].add(j)
-            adj[j].add(i)
-            continue
-        k_new = int(rng.choice(candidates))
-        new_edges.add(_edge_key(i, k_new))
-        adj[i].add(k_new)
-        adj[k_new].add(i)
-
-    return sorted(new_edges)
-
-
-def generate_barabasi_albert(n: int, m: int, rng: np.random.Generator) -> List[Tuple[int, int]]:
-    """Simple Barabási–Albert preferential attachment graph."""
-    n = int(n)
-    m = int(m)
-    if n <= 1:
-        return []
-    m = max(1, min(m, n - 1))
-
-    # start with a complete graph on m+1 nodes
-    m0 = min(n, m + 1)
-    edges = set()
-    degree = np.zeros(n, dtype=int)
-
-    for i in range(m0):
-        for j in range(i + 1, m0):
-            edges.add((i, j))
-            degree[i] += 1
-            degree[j] += 1
-
-    # list of nodes repeated by degree for sampling
-    # (works fine for small n)
-    repeated = []
-    for i in range(m0):
-        repeated.extend([i] * degree[i])
-
-    for new in range(m0, n):
-        targets = set()
-        # if all degrees are zero (shouldn't happen), fall back to uniform
-        while len(targets) < min(m, new):
-            if repeated:
-                t = int(rng.choice(repeated))
-            else:
-                t = int(rng.integers(0, new))
-            targets.add(t)
-
-        for t in targets:
-            edges.add(_edge_key(new, t))
-            degree[new] += 1
-            degree[t] += 1
-            repeated.append(new)
-            repeated.append(t)
-
-    return sorted(edges)
-
-
-def generate_graph(graph_class: str, n: int, p: float, rng: np.random.Generator,
-                   ws_beta: float = 0.3) -> List[Tuple[int, int]]:
-    """Generate edges for a given graph_class.
-
-    p is interpreted as:
-      - ER: edge probability
-      - ring/ws/ba: mapped to expected degree d = p*(n-1)
-    """
-    graph_class = str(graph_class).strip().lower()
-    p = float(np.clip(p, 0.0, 1.0))
-
-    if graph_class in ("er", "erdos", "erdos_renyi", "gnp"):
-        return generate_er_graph(n, p, rng)
-
-    # map to target expected degree
-    d = float(p * (n - 1))
-
-    if graph_class in ("ring", "regular", "regular_ring"):
-        k = int(round(d))
-        if k % 2 == 1:
-            k += 1
-        return generate_regular_ring(n, k)
-
-    if graph_class in ("ws", "watts", "watts_strogatz"):
-        k = int(round(d))
-        if k % 2 == 1:
-            k += 1
-        return generate_watts_strogatz(n, k, ws_beta, rng)
-
-    if graph_class in ("ba", "barabasi", "barabasi_albert"):
-        m = int(round(d / 2.0))
-        m = max(1, min(m, n - 1))
-        return generate_barabasi_albert(n, m, rng)
-
-    raise ValueError(f"Unknown graph_class: {graph_class}")
-
-
-# ==============================================================================
-# 4) Precompute cut masks
-# ==============================================================================
-
-
-def precompute_z_big_endian(n: int) -> np.ndarray:
-    """Z[q, x] = ±1 eigenvalue of Z on qubit q for computational basis state index x."""
-    K = 1 << n
-    idx = np.arange(K, dtype=np.uint32)
-    Z = np.empty((n, K), dtype=np.int8)
-    for q in range(n):
-        bitpos = n - 1 - q
-        Z[q] = 1 - 2 * ((idx >> bitpos) & 1).astype(np.int8)
-    return Z
-
-
-def build_cut_mask(edges: List[Tuple[int, int]], Z: np.ndarray) -> np.ndarray:
-    """cut_mask[x, e] = 1 if edge e is cut by bitstring x, else 0."""
-    K = Z.shape[1]
-    m = len(edges)
-    cut = np.empty((K, m), dtype=np.float64)
-    for e, (i, j) in enumerate(edges):
-        cut[:, e] = 0.5 * (1.0 - (Z[i] * Z[j]).astype(np.float64))
-    return cut
-
-
-# ==============================================================================
-# 5) Parametric weight family w(λ)
-# ==============================================================================
-
-
-class Family1D:
-    """w_e(λ) = w̄_e + A_e f_e(x), x = 2(λ-mid)/Δ ∈ [-1,1]."""
-
-    def __init__(self, m: int, kind: str, lam_bounds: Tuple[float, float],
-                 rng: np.random.Generator, K: int = 6):
-        self.kind = str(kind)
-        self.lam_min, self.lam_max = map(float, lam_bounds)
-        self.mid = 0.5 * (self.lam_min + self.lam_max)
-        self.Delta = max(1e-12, self.lam_max - self.lam_min)
-        self.dx_dlam = 2.0 / self.Delta
-
-        self.wbar = rng.uniform(2.0, 3.0, size=m).astype(float)
-        self.A = rng.uniform(0.3, 0.8, size=m).astype(float)
-
-        if self.kind in ("linear", "quadratic"):
-            self.s = rng.choice([-1.0, +1.0], size=m).astype(float)
-            self.k = None
-            self.phi = None
-        elif self.kind == "periodic":
-            self.k = rng.integers(1, int(K) + 1, size=m).astype(float)
-            self.phi = rng.uniform(0.0, 2 * np.pi, size=m).astype(float)
-            self.s = None
-        else:
-            raise ValueError("kind must be linear|quadratic|periodic")
-
-    def x(self, lam: float) -> float:
-        return 2.0 * (float(lam) - self.mid) / self.Delta
-
-    def f_df(self, x: float):
-        x = float(x)
-        if self.kind == "linear":
-            c = math.sqrt(3.0)
-            f = c * self.s * x
-            df = c * self.s
-        elif self.kind == "quadratic":
-            c = math.sqrt(45.0 / 4.0)
-            f = c * self.s * (x * x - 1.0 / 3.0)
-            df = c * self.s * (2.0 * x)
-        else:  # periodic
-            c = math.sqrt(2.0)
-            arg = math.pi * self.k * x + self.phi
-            f = c * np.cos(arg)
-            df = c * (-math.pi * self.k) * np.sin(arg)
-        return f, df
-
-    def w(self, lam: float) -> np.ndarray:
-        f, _ = self.f_df(self.x(lam))
-        w = self.wbar + self.A * f
-        return np.nan_to_num(w, nan=0.0, posinf=0.0, neginf=0.0).astype(float)
-
-    def dw_dlam(self, lam: float) -> np.ndarray:
-        _, df = self.f_df(self.x(lam))
-        dw = self.A * df * self.dx_dlam
-        return np.nan_to_num(dw, nan=0.0, posinf=0.0, neginf=0.0).astype(float)
-
-
-# ==============================================================================
-# 6) Statevector simulator primitives
-# ==============================================================================
-
-
-CNOT = np.array([[1, 0, 0, 0],
-                 [0, 1, 0, 0],
-                 [0, 0, 0, 1],
-                 [0, 0, 1, 0]], dtype=np.complex128)
-
-
-def _renorm(psi: np.ndarray) -> np.ndarray:
-    nrm = float(np.vdot(psi, psi).real)
-    if (not np.isfinite(nrm)) or nrm <= 0:
-        psi[:] = 1.0 / math.sqrt(psi.size)
-    else:
-        psi /= math.sqrt(nrm)
-    return psi
-
-
-def _apply_1q(psi: np.ndarray, gate: np.ndarray, target: int, n: int) -> np.ndarray:
-    with np.errstate(all="ignore"):
-        psi_r = psi.reshape([2] * n)
-        psi_r = np.moveaxis(psi_r, target, 0)
-        block = psi_r.reshape(2, -1).astype(np.complex128, copy=False)
-        out = gate @ block
-        psi_r = out.reshape([2] + [2] * (n - 1))
-        psi = np.moveaxis(psi_r, 0, target).reshape(-1)
-    return psi
-
-
-def _apply_2q(psi: np.ndarray, gate4: np.ndarray, q1: int, q2: int, n: int) -> np.ndarray:
-    if q1 == q2:
-        return psi
-    with np.errstate(all="ignore"):
-        a, b = sorted((q1, q2))
-        psi_r = psi.reshape([2] * n)
-        psi_r = np.moveaxis(psi_r, (a, b), (0, 1))
-        block = psi_r.reshape(4, -1).astype(np.complex128, copy=False)
-        out = gate4 @ block
-        psi_r = out.reshape(2, 2, *psi_r.shape[2:])
-        psi = np.moveaxis(psi_r, (0, 1), (a, b)).reshape(-1)
-    return psi
-
-
-# ==============================================================================
-# 7) Expectation value via cut-mask
-# ==============================================================================
-
-
-def probs_from_state(psi: np.ndarray) -> np.ndarray:
-    probs = (psi.conj() * psi).real.astype(np.float64)
-    s = float(np.sum(probs))
-    if (not np.isfinite(s)) or s <= 0:
-        probs[:] = 1.0 / probs.size
-    else:
-        probs /= s
-    return np.nan_to_num(probs, nan=0.0, posinf=0.0, neginf=0.0)
-
-
-def expect_J(psi: np.ndarray, cut_mask: np.ndarray, w: np.ndarray):
-    """Return (J, p_cut, probs)."""
-    probs = probs_from_state(psi)
-    p_cut = probs @ cut_mask
-    J = float(p_cut @ w)
-    if not np.isfinite(J):
-        J = 0.0
-    return float(J), p_cut.astype(np.float64), probs
-
-
-# ==============================================================================
-# 8) VQE ansatz (hardware-efficient)
-# ==============================================================================
-
-
-def vqe_state(n: int, params: np.ndarray, L: int) -> np.ndarray:
-    K = 1 << n
-    psi = np.zeros(K, dtype=np.complex128)
-    psi[0] = 1.0
-    for l in range(L):
-        ry = params[l * (2 * n): l * (2 * n) + n]
-        rz = params[l * (2 * n) + n: (l + 1) * (2 * n)]
-        for q in range(n):
-            cy, sy = math.cos(ry[q] / 2), math.sin(ry[q] / 2)
-            RY = np.array([[cy, -sy], [sy, cy]], dtype=np.complex128)
-            psi = _apply_1q(psi, RY, q, n)
-            cz, sz = np.exp(-0.5j * rz[q]), np.exp(+0.5j * rz[q])
-            RZ = np.array([[cz, 0], [0, sz]], dtype=np.complex128)
-            psi = _apply_1q(psi, RZ, q, n)
-        for q in range(n):
-            psi = _apply_2q(psi, CNOT, q, (q + 1) % n, n)
-        psi = _renorm(psi)
-    return psi
 
 
 def vqe_energy(n: int, cut_mask: np.ndarray, w: np.ndarray, params: np.ndarray, L: int) -> float:
@@ -556,59 +135,7 @@ def vqe_energy(n: int, cut_mask: np.ndarray, w: np.ndarray, params: np.ndarray, 
 
 
 # ==============================================================================
-# 9) Inner optimizer: SPSA
-# ==============================================================================
-
-
-def spsa_minimize(energy_fun, p0: np.ndarray, bounds, iters: int, seed: int,
-                  a: float = 0.2, c: float = 0.12, A: float = 20.0,
-                  alpha: float = 0.602, gamma: float = 0.101):
-    rng = np.random.default_rng(to_uint_seed(seed))
-    p = p0.astype(float).copy()
-    lo = np.array([b[0] for b in bounds], float)
-    hi = np.array([b[1] for b in bounds], float)
-    best_p, best_E = p.copy(), float("inf")
-    evals = 0
-    for k in range(1, iters + 1):
-        ak = a / ((k + A) ** alpha)
-        ck = c / (k ** gamma)
-        delta = rng.choice([-1.0, 1.0], size=p.size)
-        Ep = float(energy_fun(np.clip(p + ck * delta, lo, hi)))
-        Em = float(energy_fun(np.clip(p - ck * delta, lo, hi)))
-        evals += 2
-        ghat = (Ep - Em) / (2.0 * ck) * delta
-        p = np.clip(p - ak * ghat, lo, hi)
-        E = float(energy_fun(p))
-        evals += 1
-        if E < best_E:
-            best_E, best_p = E, p.copy()
-    return best_p, best_E, evals
-
-
-# ==============================================================================
-# 10) Classical envelope maximum for normalization J*
-# ==============================================================================
-
-
-def classical_Jstar(fam: Family1D, cut_mask: np.ndarray, grid_points: int) -> Tuple[float, float]:
-    """Approximate J* = max_{λ,z} J(z;λ) by scanning λ on a grid."""
-    lams = np.linspace(fam.lam_min, fam.lam_max, int(grid_points))
-    bestJ = -1e30
-    bestLam = float(lams[0])
-    for lam in lams:
-        w = fam.w(float(lam)).astype(np.float64)
-        cut_vals = cut_mask @ w
-        j = float(np.max(cut_vals))
-        if j > bestJ:
-            bestJ = j
-            bestLam = float(lam)
-    if not np.isfinite(bestJ) or bestJ <= 0:
-        bestJ = 1.0
-    return float(bestJ), float(bestLam)
-
-
-# ==============================================================================
-# 11) Outer loops (ID vs BB-FD), budgeted
+# Outer loops (ID vs BB-FD), budgeted
 # ==============================================================================
 
 
@@ -665,7 +192,7 @@ def run_outer_vqe_id_budgeted(
         # reuse hypergradient
         g = float(fam.dw_dlam(lam) @ p_cut)
 
-        eta = eta0 / (t ** eta_pow)
+        eta = eta0 / (t**eta_pow)
         step = float(np.clip(eta * g, -step_clip, step_clip))
         lam = float(np.clip(lam + step, lam_min, lam_max))
 
@@ -673,7 +200,6 @@ def run_outer_vqe_id_budgeted(
         "evals_cum": np.asarray(hist_evals, float),
         "J_best": np.asarray(hist_best, float),
     }
-
 
 
 def run_outer_vqe_bbfd_budgeted(
@@ -692,7 +218,7 @@ def run_outer_vqe_bbfd_budgeted(
     L_vqe: int,
     fd_c_frac: float,
 ) -> Dict[str, np.ndarray]:
-    """Black-box bilevel FD via value-probing F(λ±c): 2 extra inner solves per step."""
+    """Black-box bilevel FD via value-probing F(lambda+-c): 2 extra inner solves per step."""
 
     lam_min, lam_max = fam.lam_min, fam.lam_max
     lam = float(np.clip(lam0, lam_min, lam_max))
@@ -713,7 +239,7 @@ def run_outer_vqe_bbfd_budgeted(
         if evals >= budget_evals:
             break
 
-        # ---- inner solve at current λ ----
+        # ---- inner solve at current lambda ----
         w0 = fam.w(lam)
 
         def Efun0(pvec):
@@ -729,7 +255,7 @@ def run_outer_vqe_bbfd_budgeted(
         hist_evals.append(float(evals))
         hist_best.append(float(bestJ))
 
-        # ---- probes at λ±c (each with its own inner solve) ----
+        # ---- probes at lambda+-c (each with its own inner solve) ----
         lp = float(np.clip(lam + c_fd, lam_min, lam_max))
         lm = float(np.clip(lam - c_fd, lam_min, lam_max))
 
@@ -773,7 +299,7 @@ def run_outer_vqe_bbfd_budgeted(
             g = float((Jp - Jm) / (lp - lm))
 
         # ---- outer step ----
-        eta = eta0 / (t ** eta_pow)
+        eta = eta0 / (t**eta_pow)
         step = float(np.clip(eta * g, -step_clip, step_clip))
         lam = float(np.clip(lam + step, lam_min, lam_max))
 
@@ -784,7 +310,7 @@ def run_outer_vqe_bbfd_budgeted(
 
 
 # ==============================================================================
-# 12) Heatmap plotting
+# Heatmap plotting
 # ==============================================================================
 
 
@@ -801,16 +327,18 @@ def _pretty_graph_name(gc: str) -> str:
     return gc
 
 
-def plot_heatmaps(path: Path,
-                  n_list: List[int],
-                  p_list: List[float],
-                  graph_classes: List[str],
-                  delta_mats: Dict[str, np.ndarray],
-                  win_mats: Dict[str, np.ndarray],
-                  *,
-                  fmt: str,
-                  annotate: bool = True,
-                  cmap: str = "RdBu_r"):
+def plot_heatmaps(
+    path: Path,
+    n_list: List[int],
+    p_list: List[float],
+    graph_classes: List[str],
+    delta_mats: Dict[str, np.ndarray],
+    win_mats: Dict[str, np.ndarray],
+    *,
+    fmt: str,
+    annotate: bool = True,
+    cmap: str = "RdBu_r",
+):
     """Multi-panel heatmap grid with shared colorbar.
     Layout rule:
       - 1 panel  -> 1x1
@@ -912,7 +440,7 @@ def plot_heatmaps(path: Path,
                     if not np.isfinite(d):
                         txt = "—"
                     else:
-                        txt = f"{d:+.2f}\n{100*w:.0f}%"
+                        txt = f"{d:+.2f}\n{100 * w:.0f}%"
                     ax.text(j, i, txt, ha="center", va="center", fontsize=7)
 
     # hide empty axes
@@ -930,7 +458,7 @@ def plot_heatmaps(path: Path,
 
 
 # ==============================================================================
-# 13) Main
+# Main
 # ==============================================================================
 
 
@@ -945,10 +473,13 @@ def parse_args():
     p.add_argument("--p_list", type=str, default="0.20,0.35,0.50")
 
     # graph classes
-    p.add_argument("--graph_classes", type=str, default="er,ring,ws,ba",
-                   help="Comma-separated: er, ring, ws, ba")
-    p.add_argument("--ws_beta", type=float, default=0.30,
-                   help="Rewiring probability for Watts-Strogatz (density is still set by p).")
+    p.add_argument("--graph_classes", type=str, default="er,ring,ws,ba", help="Comma-separated: er, ring, ws, ba")
+    p.add_argument(
+        "--ws_beta",
+        type=float,
+        default=0.30,
+        help="Rewiring probability for Watts-Strogatz (density is still set by p).",
+    )
 
     # seeds
     p.add_argument("--seeds", type=str, default="1,2,3")
@@ -981,7 +512,6 @@ def parse_args():
     p.add_argument("--cmap", type=str, default="RdBu_r", help="Matplotlib colormap name.")
 
     return p.parse_args()
-
 
 
 def main():
@@ -1047,12 +577,21 @@ def main():
                         continue
 
                     cut_mask = build_cut_mask(edges, Z)
-                    fam = Family1D(len(edges), a.kind, (a.lam_min, a.lam_max), rng, K=int(a.periodic_K))
+                    fam = Family1D(
+                        len(edges),
+                        a.kind,
+                        (a.lam_min, a.lam_max),
+                        rng,
+                        periodic_K=int(a.periodic_K),
+                        safety_bounds=False,
+                    )
                     J_star, lam_star = classical_Jstar(fam, cut_mask, int(a.lam_grid))
 
                     # ID run
                     hist_id = run_outer_vqe_id_budgeted(
-                        int(n), cut_mask, fam,
+                        int(n),
+                        cut_mask,
+                        fam,
                         lam0=float(a.lam0),
                         outer_max=int(a.outer_max),
                         inner=int(a.inner),
@@ -1066,7 +605,9 @@ def main():
 
                     # BB-FD run
                     hist_fd = run_outer_vqe_bbfd_budgeted(
-                        int(n), cut_mask, fam,
+                        int(n),
+                        cut_mask,
+                        fam,
                         lam0=float(a.lam0),
                         outer_max=int(a.outer_max),
                         inner=int(a.inner),
@@ -1106,47 +647,53 @@ def main():
                     final_id = _value_at(hist_id["evals_cum"], y_id, B)
                     final_fd = _value_at(hist_fd["evals_cum"], y_fd, B)
 
-                    rows.append({
-                        "graph_class": gc,
-                        "n": int(n),
-                        "p": float(p_edge),
-                        "seed": int(s),
-                        "m_edges": int(len(edges)),
-                        "kind": str(a.kind),
-                        "periodic_K": int(a.periodic_K),
-                        "lam0": float(a.lam0),
-                        "lam_star_grid": float(lam_star),
-                        "J_star_grid": float(J_star),
-                        "budget_evals": float(B),
-                        "inner": int(a.inner),
-                        "outer_max": int(a.outer_max),
-                        "L_vqe": int(a.L_vqe),
-                        "eta0": float(a.eta0),
-                        "eta_pow": float(a.eta_pow),
-                        "step_clip": float(a.step_clip),
-                        "fd_c_frac": float(a.fd_c_frac),
-                        "auc_id": float(auc_id),
-                        "auc_fd": float(auc_fd),
-                        "delta_auc": float(delta),
-                        "final_id": float(final_id),
-                        "final_fd": float(final_fd),
-                        "delta_final": float(final_id - final_fd),
-                    })
+                    rows.append(
+                        {
+                            "graph_class": gc,
+                            "n": int(n),
+                            "p": float(p_edge),
+                            "seed": int(s),
+                            "m_edges": int(len(edges)),
+                            "kind": str(a.kind),
+                            "periodic_K": int(a.periodic_K),
+                            "lam0": float(a.lam0),
+                            "lam_star_grid": float(lam_star),
+                            "J_star_grid": float(J_star),
+                            "budget_evals": float(B),
+                            "inner": int(a.inner),
+                            "outer_max": int(a.outer_max),
+                            "L_vqe": int(a.L_vqe),
+                            "eta0": float(a.eta0),
+                            "eta_pow": float(a.eta_pow),
+                            "step_clip": float(a.step_clip),
+                            "fd_c_frac": float(a.fd_c_frac),
+                            "auc_id": float(auc_id),
+                            "auc_fd": float(auc_fd),
+                            "delta_auc": float(delta),
+                            "final_id": float(final_id),
+                            "final_fd": float(final_fd),
+                            "delta_final": float(final_id - final_fd),
+                        }
+                    )
 
                 if used > 0:
                     D[i, j] = float(np.mean(deltas))
                     W[i, j] = float(wins / used)
-                    agg_rows.append({
-                        "graph_class": gc,
-                        "n": int(n),
-                        "p": float(p_edge),
-                        "seeds_used": int(used),
-                        "delta_auc_mean": float(np.mean(deltas)),
-                        "delta_auc_std": float(np.std(deltas, ddof=1)) if used > 1 else 0.0,
-                        "win_rate": float(wins / used),
-                    })
+                    agg_rows.append(
+                        {
+                            "graph_class": gc,
+                            "n": int(n),
+                            "p": float(p_edge),
+                            "seeds_used": int(used),
+                            "delta_auc_mean": float(np.mean(deltas)),
+                            "delta_auc_std": float(np.std(deltas, ddof=1)) if used > 1 else 0.0,
+                            "win_rate": float(wins / used),
+                        }
+                    )
 
-                print(f"[{_pretty_graph_name(gc):>14}] n={n:2d} p={p_edge:.2f} | seeds={used:2d} | ΔAUC={D[i,j]:+.4f} | win={100*W[i,j]:.0f}%")
+                print(
+                    f"[{_pretty_graph_name(gc):>14}] n={n:2d} p={p_edge:.2f} | seeds={used:2d} | ΔAUC={D[i, j]:+.4f} | win={100 * W[i, j]:.0f}%"
+                )
 
         delta_mats[gc] = D
         win_mats[gc] = W
@@ -1158,8 +705,11 @@ def main():
     # heatmap
     plot_heatmaps(
         out / f"fig_exp2D_heatmap_deltaAUC.{a.fmt}",
-        n_list, p_list, graph_classes,
-        delta_mats, win_mats,
+        n_list,
+        p_list,
+        graph_classes,
+        delta_mats,
+        win_mats,
         fmt=a.fmt,
         annotate=(not a.no_annotate),
         cmap=str(a.cmap),
@@ -1184,10 +734,10 @@ def main():
     lines.append("  line2: win-rate % (fraction seeds with ΔAUC_B>0)")
     lines.append("")
     lines.append("Saved outputs:")
-    lines.append(f"  - exp2D_rows.csv")
-    lines.append(f"  - exp2D_agg.csv")
+    lines.append("  - exp2D_rows.csv")
+    lines.append("  - exp2D_agg.csv")
     lines.append(f"  - fig_exp2D_heatmap_deltaAUC.{a.fmt}")
-    lines.append(f"  - exp2D_summary.txt")
+    lines.append("  - exp2D_summary.txt")
 
     with open(out / "exp2D_summary.txt", "w") as f:
         f.write("\n".join(lines) + "\n")

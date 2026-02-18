@@ -17,7 +17,13 @@ env/
 .vscode/
 .idea/
 
+# Build / packaging
+*.egg-info/
+dist/
+build/
+
 # Experiment outputs
 out_*/
 experiment1/
 experiment5/
+experiment_final/
