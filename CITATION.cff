@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+title: "paramham"
+message: "If you use this software, please cite it using this metadata."
+type: software
+authors:
+  - family-names: "Markus"
+repository-code: "https://github.com/eybmits/parameterized-hamiltonians-id"
+license: "MIT"
+version: "0.2.0"
+date-released: 2026-02-26
