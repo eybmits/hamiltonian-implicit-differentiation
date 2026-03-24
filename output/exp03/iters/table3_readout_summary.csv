@@ -1,0 +1,13 @@
+family,metric,ID_mean,ID_stderr,BD_mean,BD_stderr
+linear,Best-of-S final / J*,0.950812,0.007233,0.933022,0.006239
+linear,Mode final / J*,0.902304,0.010034,0.879705,0.011287
+linear,Best-of-S AUC (steps),0.933696,0.005828,0.916866,0.006797
+linear,Mode AUC (steps),0.868746,0.006264,0.822047,0.008846
+quadratic,Best-of-S final / J*,0.941540,0.013420,0.918950,0.015527
+quadratic,Mode final / J*,0.888794,0.015232,0.831525,0.015761
+quadratic,Best-of-S AUC (steps),0.920884,0.012699,0.899374,0.015609
+quadratic,Mode AUC (steps),0.847171,0.010957,0.780229,0.013100
+periodic,Best-of-S final / J*,0.948689,0.009495,0.944962,0.010020
+periodic,Mode final / J*,0.897870,0.012908,0.863442,0.018546
+periodic,Best-of-S AUC (steps),0.941879,0.009548,0.931627,0.009487
+periodic,Mode AUC (steps),0.872816,0.008176,0.828303,0.010613

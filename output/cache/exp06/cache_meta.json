@@ -1,0 +1,41 @@
+{
+  "L_vqe": 2,
+  "budget_evals": 2000.0,
+  "eta0": 0.25,
+  "eta_pow": 0.4,
+  "fd_c_frac": 0.1,
+  "graph_classes": [
+    "er",
+    "ring",
+    "ws",
+    "ba"
+  ],
+  "graph_seed": 7,
+  "inner": 28,
+  "kind": "periodic",
+  "lam0": 0.8,
+  "lam_grid": 301,
+  "lam_max": 5.0,
+  "lam_min": -5.0,
+  "n_list": [
+    8,
+    10,
+    12,
+    14
+  ],
+  "outer_max": 250,
+  "p_list": [
+    0.2,
+    0.35,
+    0.5,
+    0.65
+  ],
+  "periodic_K": 6,
+  "seeds": [
+    1,
+    2,
+    3
+  ],
+  "step_clip": 0.6,
+  "ws_beta": 0.3
+}

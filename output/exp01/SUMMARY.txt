@@ -1,0 +1,21 @@
+Experiment 1 — Core ID vs FD Demo
+
+Contents:
+- linear/: five single-family panels plus SUMMARY.txt
+- quadratic/: five single-family panels plus SUMMARY.txt
+- periodic/: five single-family panels plus SUMMARY.txt
+- spectrum_compare/: cross-family x-ray collage plus SUMMARY.txt
+
+Canonical defaults:
+- n=12
+- graph_seed=7
+- p_edge=0.45
+- lam0=0.8
+- lam_min=-5.0
+- lam_max=5.0
+- periodic_K=6
+- budget_evals=2000
+
+This experiment is intentionally stored as a small suite because the paper-facing
+result consists of the three family-specific figure sets together with the
+spectrum comparison collage.

@@ -4,7 +4,7 @@
 exp04_robustness_sweep_periodic_k.py
 ==========================
 
-Experiment 1B (paper / supplement): Robustness sweep over periodic difficulty K
+Experiment 4: Robustness sweep over periodic difficulty K
 ------------------------------------------------------------------------------
 
 Goal (new story)
@@ -37,17 +37,17 @@ Design
     - compute per-instance AUC gain
 
 Outputs (ready for paper/supp)
-  - fig1B_auc_gain_by_K.<fmt>
+  - fig4_auc_gain_by_K.<fmt>
       per-instance scatter (jitter) + mean ± s.e.m. per K
-  - fig1B_winrate_by_K.<fmt>
+  - fig4_winrate_by_K.<fmt>
       fraction of instances with AUC_gain > 0 (ID "wins")
-  - exp1B_results.csv
+  - runs4_robustness_metrics.csv
       per-instance metrics (K, auc_id, auc_fd, auc_gain, switch_density, ...)
-  - table1B_K_summary.csv
+  - table4_summary.csv
       per-K summary table
-  - table1B_K_summary.tex
+  - table4_summary.tex
       LaTeX table (booktabs)
-  - exp1B_summary.txt
+  - SUMMARY.txt
       compact text summary
 
 Example
@@ -67,20 +67,29 @@ Notes
 
 import argparse
 import csv
+import json
 import math
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import numpy as np
 
+from paramham.experiment_defaults import (
+    CANONICAL_SETUP,
+    can_run_step,
+    generate_er_family1d_instance,
+    publication_cache_dir,
+    publication_output_dir,
+    vqe_fd_value_step_cost,
+    vqe_id_step_cost,
+)
 from paramham.families import Family1D
-from paramham.graphs import generate_random_graph
 from paramham.io import parse_int_list
 from paramham.maxcut import build_cut_mask
 from paramham.maxcut import precompute_z as precompute_z_big_endian
-from paramham.plotting import COL_W, COLORS, H_COL, _savefig, set_pub_style
-from paramham.seeds import to_uint_seed
+from paramham.plotting import COL_W, COLORS, FULL_W, H_COL, _savefig, add_panel_legend, set_pub_style
 from paramham.simulator import vqe_state
 from paramham.spsa import spsa_minimize
 
@@ -91,6 +100,59 @@ from paramham.spsa import spsa_minimize
 
 def fig_size() -> Tuple[float, float]:
     return (COL_W, H_COL)
+
+
+def fig_size_wide() -> Tuple[float, float]:
+    return (FULL_W, H_COL + 0.20)
+
+
+def _cache_default_dir(out: Path) -> Path:
+    return publication_cache_dir("exp04")
+
+
+def _cache_meta(args, K_list: List[int]) -> dict:
+    return {
+        "K_list": [int(k) for k in K_list],
+        "instances_per_K": int(args.instances_per_K),
+        "seed": int(args.seed),
+        "n": int(args.n),
+        "p_edge": float(args.p_edge),
+        "graph_seed": int(args.graph_seed),
+        "lam_min": float(args.lam_min),
+        "lam_max": float(args.lam_max),
+        "lam0": float(args.lam0),
+        "grid": int(args.grid),
+        "L": int(args.L),
+        "inner": int(args.inner),
+        "eta0": float(args.eta0),
+        "eta_pow": float(args.eta_pow),
+        "step_clip": float(args.step_clip),
+        "c_frac": float(args.c_frac),
+        "budget_evals": float(args.budget_evals),
+        "id_outer_ref": int(args.id_outer_ref),
+        "outer_max": int(args.outer_max),
+    }
+
+
+def save_exp04_cache(cache_dir: Path, meta: dict, rows: List[Dict]) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "cache_meta.json").write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
+    (cache_dir / "rows.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
+
+
+def load_exp04_cache(cache_dir: Path, meta_expected: dict):
+    meta_path = cache_dir / "cache_meta.json"
+    rows_path = cache_dir / "rows.json"
+    if not meta_path.exists() or not rows_path.exists():
+        return None
+    try:
+        meta_found = json.loads(meta_path.read_text(encoding="utf-8"))
+        rows = json.loads(rows_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if meta_found != meta_expected:
+        return None
+    return rows
 
 
 # ==============================================================================
@@ -120,6 +182,32 @@ def win_rate(x: np.ndarray) -> Tuple[float, int, int]:
         return float("nan"), 0, 0
     wins = int(np.sum(x > 0.0))
     return float(wins / n), wins, n
+
+
+def build_K_summary_rows(rows: List[Dict], K_list: List[int]) -> List[Dict]:
+    summary_rows: List[Dict] = []
+    for K in K_list:
+        subset = [r for r in rows if int(r["periodic_K"]) == int(K)]
+        if not subset:
+            continue
+        sd = np.array([r["switch_density"] for r in subset], dtype=float)
+        ag = np.array([r["auc_gain"] for r in subset], dtype=float)
+        sd_mu, sd_se = mean_stderr(sd)
+        ag_mu, ag_se = mean_stderr(ag)
+        wr, wins, n = win_rate(ag)
+        summary_rows.append(
+            {
+                "K": int(K),
+                "N": int(n),
+                "switch_density_mean": float(sd_mu),
+                "switch_density_se": float(sd_se),
+                "auc_gain_mean": float(ag_mu),
+                "auc_gain_se": float(ag_se),
+                "win_rate": float(wr),
+                "wins": int(wins),
+            }
+        )
+    return summary_rows
 
 
 def auc_step(evals: np.ndarray, y: np.ndarray, B: float) -> float:
@@ -330,7 +418,11 @@ def run_bilevel_outer(
     evals_evt: List[float] = []
     best_evt: List[float] = []
 
+    step_cost = vqe_id_step_cost(inner) if mode == "ID" else vqe_fd_value_step_cost(inner)
+
     for t in range(1, int(outer_max) + 1):
+        if not can_run_step(evals_used=evals, budget_evals=budget_evals, step_cost=step_cost):
+            break
         # central value evaluation at current λ
         Jc, params_c, zexp_c, cost_c = value_eval(n, edges, Z, fam, lam, params, L, inner, seed=seed + 1000 * t + 0)
         params = params_c
@@ -398,7 +490,10 @@ def plot_auc_gain_by_K(path: Path, rows: List[Dict], K_list: List[int]):
     Main robustness figure:
       per-instance AUC gain scatter (jittered) + mean ± s.e.m. per K.
     """
-    set_pub_style(grid=False)
+    set_pub_style(grid=True, base_size=8)
+    plt.rcParams["axes.grid"] = True
+    plt.rcParams["grid.alpha"] = 0.18
+    plt.rcParams["grid.linestyle"] = "--"
     fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
 
     rng_jit = np.random.default_rng(12345)
@@ -410,7 +505,16 @@ def plot_auc_gain_by_K(path: Path, rows: List[Dict], K_list: List[int]):
             continue
         x = float(K)
         jitter = rng_jit.uniform(-0.12, 0.12, size=ys.size)
-        ax.scatter(x + jitter, ys, s=18, color="#555555", alpha=0.55, edgecolors="none", label="_nolegend_")
+        ax.scatter(
+            x + jitter,
+            ys,
+            s=16,
+            color=COLORS["NEUTRAL"],
+            alpha=0.75,
+            edgecolors="none",
+            label="_nolegend_",
+            zorder=2,
+        )
 
         mu, se = mean_stderr(ys)
         ax.errorbar(
@@ -423,18 +527,25 @@ def plot_auc_gain_by_K(path: Path, rows: List[Dict], K_list: List[int]):
             capsize=2.5,
             elinewidth=1.0,
             label="_nolegend_",
+            zorder=4,
         )
 
-    ax.axhline(0.0, color=COLORS["GT"], lw=1.0, ls=":")
+    ax.axhline(0.0, color=COLORS["REFERENCE"], lw=1.0, ls=":", zorder=1)
 
     ax.set_xlabel(r"Periodic difficulty $K$")
     ax.set_ylabel(r"AUC gain $\mathrm{AUC}_{\mathrm{ID}}-\mathrm{AUC}_{\mathrm{FD}}$")
 
     ax.set_xticks(K_list)
     ax.set_xlim(min(K_list) - 0.6, max(K_list) + 0.6)
+    gains = np.array([r["auc_gain"] for r in rows], dtype=float)
+    finite = gains[np.isfinite(gains)]
+    if finite.size:
+        ymin = min(np.min(finite) - 0.01, -0.005)
+        ymax = max(np.max(finite) + 0.015, 0.015)
+        ax.set_ylim(ymin, ymax)
 
     # Compact legend (proxy artists)
-    h1 = ax.scatter([], [], s=18, color="#555555", alpha=0.55, edgecolors="none", label="Instances")
+    h1 = ax.scatter([], [], s=16, color=COLORS["NEUTRAL"], alpha=0.75, edgecolors="none", label="Instances")
     h2 = ax.errorbar(
         [],
         [],
@@ -446,9 +557,10 @@ def plot_auc_gain_by_K(path: Path, rows: List[Dict], K_list: List[int]):
         elinewidth=1.0,
         label=r"Mean $\pm$ s.e.m.",
     )
-    ax.legend(loc="upper right", frameon=False, handles=[h1, h2])
+    add_panel_legend(ax, handles=[h1, h2], placement="below", ncol=2)
 
     _savefig(fig, path)
+    plt.close(fig)
 
 
 def plot_winrate_by_K(path: Path, rows: List[Dict], K_list: List[int]):
@@ -456,7 +568,10 @@ def plot_winrate_by_K(path: Path, rows: List[Dict], K_list: List[int]):
     Secondary robustness plot:
       win rate = fraction of instances with AUC_gain > 0.
     """
-    set_pub_style(grid=False)
+    set_pub_style(grid=True, base_size=8)
+    plt.rcParams["axes.grid"] = True
+    plt.rcParams["grid.alpha"] = 0.18
+    plt.rcParams["grid.linestyle"] = "--"
     fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
 
     rates = []
@@ -473,9 +588,19 @@ def plot_winrate_by_K(path: Path, rows: List[Dict], K_list: List[int]):
     rates = np.array(rates, dtype=float)
     errs = np.array(errs, dtype=float)
 
-    ax.errorbar(xs, rates, yerr=errs, fmt="o", color=COLORS["ID"], capsize=2.5, elinewidth=1.0)
-    ax.axhline(0.5, color="#888888", lw=0.8, ls=":")
-    ax.set_ylim(-0.02, 1.02)
+    ax.errorbar(xs, rates, yerr=errs, fmt="o", color=COLORS["ID"], capsize=2.5, elinewidth=1.0, zorder=3)
+    ax.axhline(0.5, color=COLORS["REFERENCE"], lw=0.9, ls=":", zorder=1)
+    finite = rates[np.isfinite(rates)]
+    if finite.size:
+        ymin = max(0.0, float(np.min(finite - errs) - 0.08))
+        ymax = min(1.02, float(np.max(finite + errs) + 0.08))
+        if ymin > 0.55:
+            ymin = max(0.45, ymin)
+        else:
+            ymin = 0.0
+        ax.set_ylim(ymin, ymax)
+    else:
+        ax.set_ylim(-0.02, 1.02)
 
     ax.set_xlabel(r"Periodic difficulty $K$")
     ax.set_ylabel(r"Win rate $\Pr(\mathrm{AUC\ gain}>0)$")
@@ -483,6 +608,85 @@ def plot_winrate_by_K(path: Path, rows: List[Dict], K_list: List[int]):
     ax.set_xlim(min(K_list) - 0.6, max(K_list) + 0.6)
 
     _savefig(fig, path)
+    plt.close(fig)
+
+
+def plot_robustness_panels(path: Path, rows: List[Dict], K_list: List[int]):
+    set_pub_style(grid=True, base_size=8)
+    plt.rcParams["axes.grid"] = True
+    plt.rcParams["grid.alpha"] = 0.18
+    plt.rcParams["grid.linestyle"] = "--"
+
+    fig, axs = plt.subplots(1, 2, figsize=fig_size_wide(), constrained_layout=True)
+    ax_gain, ax_win = axs
+
+    rng_jit = np.random.default_rng(12345)
+    for K in K_list:
+        ys = np.array([r["auc_gain"] for r in rows if int(r["periodic_K"]) == int(K)], dtype=float)
+        if ys.size == 0:
+            continue
+        x = float(K)
+        jitter = rng_jit.uniform(-0.12, 0.12, size=ys.size)
+        ax_gain.scatter(x + jitter, ys, s=16, color=COLORS["NEUTRAL"], alpha=0.75, edgecolors="none", zorder=2)
+        mu, se = mean_stderr(ys)
+        ax_gain.errorbar(
+            [x],
+            [mu],
+            yerr=[se],
+            fmt="o",
+            color=COLORS["ID"],
+            markersize=5.5,
+            capsize=2.5,
+            elinewidth=1.0,
+            zorder=4,
+        )
+
+    gains = np.array([r["auc_gain"] for r in rows], dtype=float)
+    finite_gains = gains[np.isfinite(gains)]
+    ax_gain.axhline(0.0, color=COLORS["REFERENCE"], lw=1.0, ls=":", zorder=1)
+    ax_gain.set_xlabel(r"Periodic difficulty $K$")
+    ax_gain.set_ylabel(r"AUC gain $\mathrm{AUC}_{\mathrm{ID}}-\mathrm{AUC}_{\mathrm{FD}}$")
+    ax_gain.set_xticks(K_list)
+    ax_gain.set_xlim(min(K_list) - 0.6, max(K_list) + 0.6)
+    if finite_gains.size:
+        ax_gain.set_ylim(min(np.min(finite_gains) - 0.01, -0.005), max(np.max(finite_gains) + 0.015, 0.015))
+
+    rates = []
+    errs = []
+    for K in K_list:
+        ys = np.array([r["auc_gain"] for r in rows if int(r["periodic_K"]) == int(K)], dtype=float)
+        p, wins, n = win_rate(ys)
+        rates.append(p)
+        errs.append(math.sqrt(max(0.0, p * (1.0 - p) / max(1, n))))
+    xs = np.array(K_list, dtype=float)
+    rates = np.array(rates, dtype=float)
+    errs = np.array(errs, dtype=float)
+
+    ax_win.errorbar(xs, rates, yerr=errs, fmt="o", color=COLORS["ID"], capsize=2.5, elinewidth=1.0, zorder=3)
+    ax_win.axhline(0.5, color=COLORS["REFERENCE"], lw=0.9, ls=":", zorder=1)
+    ax_win.set_xlabel(r"Periodic difficulty $K$")
+    ax_win.set_ylabel(r"Win rate $\Pr(\mathrm{AUC\ gain}>0)$")
+    ax_win.set_xticks(K_list)
+    ax_win.set_xlim(min(K_list) - 0.6, max(K_list) + 0.6)
+    finite_rates = rates[np.isfinite(rates)]
+    if finite_rates.size:
+        ymin = max(0.0, float(np.min(finite_rates - errs) - 0.08))
+        ymax = min(1.02, float(np.max(finite_rates + errs) + 0.08))
+        ax_win.set_ylim(max(0.45, ymin) if ymin > 0.55 else 0.0, ymax)
+    else:
+        ax_win.set_ylim(-0.02, 1.02)
+
+    ax_gain.text(-0.04, 1.04, "(A)", transform=ax_gain.transAxes, fontsize=11, fontweight="bold", va="bottom")
+    ax_win.text(-0.04, 1.04, "(B)", transform=ax_win.transAxes, fontsize=11, fontweight="bold", va="bottom")
+
+    handles = [
+        mlines.Line2D([], [], color=COLORS["NEUTRAL"], marker="o", ls="None", ms=4, label="Instances"),
+        mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label=r"Mean $\pm$ s.e.m."),
+    ]
+    add_panel_legend(ax_gain, handles=handles, placement="above_right", ncol=1)
+
+    _savefig(fig, path)
+    plt.close(fig)
 
 
 # ==============================================================================
@@ -492,8 +696,11 @@ def plot_winrate_by_K(path: Path, rows: List[Dict], K_list: List[int]):
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--out", type=str, default="outputs/exp04_robustness_sweep_periodic_k")
+    p.add_argument("--out", type=str, default=None)
+    p.add_argument("--cache_dir", type=str, default=None)
     p.add_argument("--fmt", type=str, default="pdf", choices=["pdf", "png", "svg"])
+    p.add_argument("--recompute", action="store_true")
+    p.add_argument("--render_only", action="store_true")
 
     # sweep
     p.add_argument("--K_list", type=str, default="2,3,4,5,6")
@@ -501,11 +708,12 @@ def parse_args():
     p.add_argument("--seed", type=int, default=7)
 
     # problem size
-    p.add_argument("--n", type=int, default=12)
-    p.add_argument("--p_edge", type=float, default=0.45)
-    p.add_argument("--lam_min", type=float, default=-5.0)
-    p.add_argument("--lam_max", type=float, default=5.0)
-    p.add_argument("--lam0", type=float, default=0.8)
+    p.add_argument("--n", type=int, default=CANONICAL_SETUP.n)
+    p.add_argument("--p_edge", type=float, default=CANONICAL_SETUP.p_edge)
+    p.add_argument("--graph_seed", type=int, default=CANONICAL_SETUP.graph_seed)
+    p.add_argument("--lam_min", type=float, default=CANONICAL_SETUP.lam_min)
+    p.add_argument("--lam_max", type=float, default=CANONICAL_SETUP.lam_max)
+    p.add_argument("--lam0", type=float, default=CANONICAL_SETUP.lam0)
     p.add_argument("--grid", type=int, default=401)
 
     # VQE / bilevel
@@ -520,8 +728,8 @@ def parse_args():
     p.add_argument(
         "--budget_evals",
         type=float,
-        default=None,
-        help="common eval-budget cap (energy evals); default matches ID outer_ref*(3*inner+1)",
+        default=CANONICAL_SETUP.budget_evals,
+        help="common eval-budget cap (energy evals)",
     )
     p.add_argument("--id_outer_ref", type=int, default=60)
     p.add_argument("--outer_max", type=int, default=2000)
@@ -531,130 +739,133 @@ def parse_args():
 
 def main():
     a = parse_args()
-    out = Path(a.out)
+    out = Path(a.out) if a.out is not None else publication_output_dir("exp04")
     out.mkdir(parents=True, exist_ok=True)
 
     K_list = parse_int_list(a.K_list)
     if not K_list:
         raise ValueError("K_list is empty")
 
-    # default budget: approximate ID budget for id_outer_ref steps
-    if a.budget_evals is None:
-        # inner SPSA: 3 evals/iter, plus 1 for final J -> 3*inner + 1 per value-eval
-        a.budget_evals = float(a.id_outer_ref * (3 * a.inner + 1))
     B = float(a.budget_evals)
+    cache_dir = Path(a.cache_dir) if a.cache_dir is not None else _cache_default_dir(out)
+    meta = _cache_meta(a, K_list)
 
-    Z = precompute_z_big_endian(int(a.n))
+    rows = None if a.recompute else load_exp04_cache(cache_dir, meta)
+    if rows is not None:
+        print(f"[cache] Loaded robustness rows from {cache_dir.resolve()}")
+    elif a.render_only:
+        raise SystemExit(f"No matching cache found in {cache_dir}")
+    else:
+        Z = precompute_z_big_endian(int(a.n))
+        rows = []
+        total = len(K_list) * int(a.instances_per_K)
+        done = 0
 
-    rows: List[Dict] = []
-    total = len(K_list) * int(a.instances_per_K)
-    done = 0
-
-    for K in K_list:
-        for r in range(int(a.instances_per_K)):
-            done += 1
-            inst_seed = int(a.seed + 100000 * int(K) + r)
-            rng = np.random.default_rng(to_uint_seed(inst_seed))
-
-            # sample non-empty graph
-            edges = generate_random_graph(int(a.n), float(a.p_edge), rng)
-            retry = 0
-            while (not edges) and retry < 50:
-                retry += 1
-                edges = generate_random_graph(int(a.n), float(a.p_edge), rng)
-            if not edges:
-                print(f"[warn] skip instance (empty graph) K={K} r={r}")
-                continue
-
-            cut_mask = build_cut_mask(edges, Z)
-            fam = Family1D(len(edges), "periodic", (a.lam_min, a.lam_max), rng, periodic_K=int(K), safety_bounds=False)
-
-            sw_count, sw_density, J_cl_max = classical_switch_density_and_scale(fam, cut_mask, int(a.grid))
-            if (not np.isfinite(J_cl_max)) or (J_cl_max <= 0.0):
-                J_cl_max = 1.0
-
-            # run algorithms under matched eval budget
-            hist_id = run_bilevel_outer(
-                a.n,
-                edges,
-                Z,
-                fam,
-                a.lam0,
-                a.L,
-                a.inner,
-                a.eta0,
-                a.eta_pow,
-                a.step_clip,
-                mode="ID",
-                seed=inst_seed,
-                c_frac=a.c_frac,
-                budget_evals=B,
-                outer_max=a.outer_max,
-            )
-            hist_fd = run_bilevel_outer(
-                a.n,
-                edges,
-                Z,
-                fam,
-                a.lam0,
-                a.L,
-                a.inner,
-                a.eta0,
-                a.eta_pow,
-                a.step_clip,
-                mode="FD_VALUE",
-                seed=inst_seed,
-                c_frac=a.c_frac,
-                budget_evals=B,
-                outer_max=a.outer_max,
-            )
-
-            # Normalize best-so-far values by classical max on grid, then compute AUC/B
-            y_id = hist_id["best_evt"] / J_cl_max
-            y_fd = hist_fd["best_evt"] / J_cl_max
-
-            # guard (grid max can slightly underapprox the true max)
-            y_id = np.clip(y_id, 0.0, 1.5)
-            y_fd = np.clip(y_fd, 0.0, 1.5)
-
-            auc_id = auc_step(hist_id["evals_evt"], y_id, B) / B
-            auc_fd = auc_step(hist_fd["evals_evt"], y_fd, B) / B
-            auc_gain = float(auc_id - auc_fd)
-
-            rows.append(
-                {
-                    "periodic_K": int(K),
-                    "instance_seed": int(inst_seed),
-                    "n": int(a.n),
-                    "m_edges": int(len(edges)),
-                    "switch_count": int(sw_count),
-                    "switch_density": float(sw_density),
-                    "Jcl_max_grid": float(J_cl_max),
-                    "budget_evals": float(B),
-                    "auc_id": float(auc_id),
-                    "auc_fd": float(auc_fd),
-                    "auc_gain": float(auc_gain),
-                    "id_evals_end": float(hist_id["evals_evt"][-1]) if hist_id["evals_evt"].size else 0.0,
-                    "fd_evals_end": float(hist_fd["evals_evt"][-1]) if hist_fd["evals_evt"].size else 0.0,
-                    "id_best_end_norm": float(y_id[-1]) if y_id.size else 0.0,
-                    "fd_best_end_norm": float(y_fd[-1]) if y_fd.size else 0.0,
-                    "id_wins_auc": int(auc_gain > 0.0),
-                }
-            )
-
-            # lightweight progress
-            if done % max(1, total // 10) == 0 or done == total:
-                print(
-                    f"[{done:4d}/{total}] K={K:2d} seed={inst_seed}  switch_density={sw_density:.2f}  auc_gain={auc_gain:+.3f}"
+        for K in K_list:
+            for r in range(int(a.instances_per_K)):
+                done += 1
+                inst_seed = int(a.seed + 100000 * int(K) + r)
+                edges, fam = generate_er_family1d_instance(
+                    int(a.n),
+                    float(a.p_edge),
+                    "periodic",
+                    (a.lam_min, a.lam_max),
+                    graph_seed=a.graph_seed,
+                    periodic_K=int(K),
+                    instance_id=inst_seed,
+                    safety_bounds=False,
                 )
+                if not edges or fam is None:
+                    print(f"[warn] skip instance (empty graph) K={K} r={r}")
+                    continue
+
+                cut_mask = build_cut_mask(edges, Z)
+
+                sw_count, sw_density, J_cl_max = classical_switch_density_and_scale(fam, cut_mask, int(a.grid))
+                if (not np.isfinite(J_cl_max)) or (J_cl_max <= 0.0):
+                    J_cl_max = 1.0
+
+                hist_id = run_bilevel_outer(
+                    a.n,
+                    edges,
+                    Z,
+                    fam,
+                    a.lam0,
+                    a.L,
+                    a.inner,
+                    a.eta0,
+                    a.eta_pow,
+                    a.step_clip,
+                    mode="ID",
+                    seed=inst_seed,
+                    c_frac=a.c_frac,
+                    budget_evals=B,
+                    outer_max=a.outer_max,
+                )
+                hist_fd = run_bilevel_outer(
+                    a.n,
+                    edges,
+                    Z,
+                    fam,
+                    a.lam0,
+                    a.L,
+                    a.inner,
+                    a.eta0,
+                    a.eta_pow,
+                    a.step_clip,
+                    mode="FD_VALUE",
+                    seed=inst_seed,
+                    c_frac=a.c_frac,
+                    budget_evals=B,
+                    outer_max=a.outer_max,
+                )
+
+                y_id = hist_id["best_evt"] / J_cl_max
+                y_fd = hist_fd["best_evt"] / J_cl_max
+                y_id = np.clip(y_id, 0.0, 1.5)
+                y_fd = np.clip(y_fd, 0.0, 1.5)
+
+                auc_id = auc_step(hist_id["evals_evt"], y_id, B) / B
+                auc_fd = auc_step(hist_fd["evals_evt"], y_fd, B) / B
+                auc_gain = float(auc_id - auc_fd)
+
+                rows.append(
+                    {
+                        "periodic_K": int(K),
+                        "instance_seed": int(inst_seed),
+                        "graph_seed": int(a.graph_seed),
+                        "n": int(a.n),
+                        "m_edges": int(len(edges)),
+                        "switch_count": int(sw_count),
+                        "switch_density": float(sw_density),
+                        "Jcl_max_grid": float(J_cl_max),
+                        "budget_evals": float(B),
+                        "auc_id": float(auc_id),
+                        "auc_fd": float(auc_fd),
+                        "auc_gain": float(auc_gain),
+                        "id_evals_end": float(hist_id["evals_evt"][-1]) if hist_id["evals_evt"].size else 0.0,
+                        "fd_evals_end": float(hist_fd["evals_evt"][-1]) if hist_fd["evals_evt"].size else 0.0,
+                        "id_best_end_norm": float(y_id[-1]) if y_id.size else 0.0,
+                        "fd_best_end_norm": float(y_fd[-1]) if y_fd.size else 0.0,
+                        "id_wins_auc": int(auc_gain > 0.0),
+                    }
+                )
+
+                if done % max(1, total // 10) == 0 or done == total:
+                    print(
+                        f"[{done:4d}/{total}] K={K:2d} seed={inst_seed}  switch_density={sw_density:.2f}  auc_gain={auc_gain:+.3f}"
+                    )
+
+        save_exp04_cache(cache_dir, meta, rows)
+        print(f"[cache] Saved robustness rows to {cache_dir.resolve()}")
 
     if not rows:
         raise RuntimeError("No results collected (all instances skipped?)")
 
     # Per-K summary rows
-    K_summary_rows: List[Dict] = []
+    K_summary_rows = build_K_summary_rows(rows, K_list)
     txt_lines = []
-    txt_lines.append(f"N_total={len(rows)} | budget_evals={B:.1f}")
+    txt_lines.append(f"N_total={len(rows)} | budget_evals={B:.1f} | graph_seed={a.graph_seed}")
     txt_lines.append("")
 
     all_gains = np.array([r["auc_gain"] for r in rows], dtype=float)
@@ -666,36 +877,21 @@ def main():
     txt_lines.append("Per-K summary (mean \u00b1 s.e.m.):")
     txt_lines.append("K, N, switch_density, AUC_gain, win_rate")
 
-    for K in K_list:
-        subset = [r for r in rows if int(r["periodic_K"]) == int(K)]
-        if not subset:
-            continue
-        sd = np.array([r["switch_density"] for r in subset], dtype=float)
-        ag = np.array([r["auc_gain"] for r in subset], dtype=float)
-
-        sd_mu, sd_se = mean_stderr(sd)
-        ag_mu, ag_se = mean_stderr(ag)
-        wr, wins, n = win_rate(ag)
-
+    for rr in K_summary_rows:
+        K = int(rr["K"])
+        n = int(rr["N"])
+        sd_mu = float(rr["switch_density_mean"])
+        sd_se = float(rr["switch_density_se"])
+        ag_mu = float(rr["auc_gain_mean"])
+        ag_se = float(rr["auc_gain_se"])
+        wr = float(rr["win_rate"])
+        wins = int(rr["wins"])
         txt_lines.append(
             f"{K:2d}, {n:2d}, {sd_mu:.3f} \u00b1 {sd_se:.3f}, {ag_mu:+.4f} \u00b1 {ag_se:.4f}, {wr * 100:5.1f}% ({wins}/{n})"
         )
 
-        K_summary_rows.append(
-            {
-                "K": int(K),
-                "N": int(n),
-                "switch_density_mean": float(sd_mu),
-                "switch_density_se": float(sd_se),
-                "auc_gain_mean": float(ag_mu),
-                "auc_gain_se": float(ag_se),
-                "win_rate": float(wr),
-                "wins": int(wins),
-            }
-        )
-
     # Write per-instance CSV
-    write_csv(out / "exp1B_results.csv", rows)
+    write_csv(out / "runs4_robustness_metrics.csv", rows)
 
     # Write per-K table CSV
     table_rows_csv = []
@@ -712,7 +908,7 @@ def main():
                 "wins": rr["wins"],
             }
         )
-    write_csv(out / "table1B_K_summary.csv", table_rows_csv)
+    write_csv(out / "table4_summary.csv", table_rows_csv)
 
     # Write LaTeX table (booktabs)
     tex_rows = []
@@ -727,19 +923,20 @@ def main():
             }
         )
     write_tex_table(
-        out / "table1B_K_summary.tex",
+        out / "table4_summary.tex",
         tex_rows,
         caption="Robustness sweep over periodic difficulty $K$ (mean $\\pm$ s.e.m. over instances). "
         "Switch density is computed from the classical envelope identity sequence on a $\\lambda$-grid.",
-        label="tab:exp1B_K_sweep",
+        label="tab:exp4_K_sweep",
     )
 
     # Write text summary
-    (out / "exp1B_summary.txt").write_text("\n".join(txt_lines) + "\n", encoding="utf-8")
+    (out / "SUMMARY.txt").write_text("\n".join(txt_lines) + "\n", encoding="utf-8")
 
     # Plots
-    plot_auc_gain_by_K(out / f"fig1B_auc_gain_by_K.{a.fmt}", rows, K_list)
-    plot_winrate_by_K(out / f"fig1B_winrate_by_K.{a.fmt}", rows, K_list)
+    plot_auc_gain_by_K(out / f"fig4_auc_gain_by_K.{a.fmt}", rows, K_list)
+    plot_winrate_by_K(out / f"fig4_winrate_by_K.{a.fmt}", rows, K_list)
+    plot_robustness_panels(out / f"fig4_robustness_by_K.{a.fmt}", rows, K_list)
 
     print("\n".join(txt_lines))
     print("Saved to:", out.resolve())

@@ -1,50 +1,82 @@
 # Reproducibility Guide
 
-## Baseline Environment
+## Environment
 
-- Python: `3.10` to `3.12`
-- Install: `pip install -e ".[dev]"`
+- Python `>=3.10`
+- install with `pip install -e ".[dev]"`
 
-## Standard Validation
-
-Run before and after experiment changes:
+## Validation
 
 ```bash
-ruff check src tests experiments
-ruff format --check src tests experiments
-pytest -v
+make test
 ```
 
-## Reproducible Runs
+## Standard Reproduction Interface
 
-1. Always pass explicit seeds (`--seed`, `--seed0`, or `--seeds`).
-2. Use explicit output directory (`--out outputs/<experiment-id>/<run-id>`).
-3. Record invocation command with commit hash.
+The repository-standard interface is the `Makefile`.
 
-Example:
+Per-experiment runs:
 
 ```bash
-git rev-parse HEAD
-python experiments/exp02_budget_efficiency_multiseed.py \
-  --kinds periodic,linear \
-  --seeds 1,2,3 \
-  --outer 30 \
-  --inner 28 \
-  --out outputs/exp02_budget_efficiency_multiseed/run_2026-02-26_a
+make exp01
+make exp02
+make exp03
+make exp04
+make exp05
+make exp06
+make exp07
+make exp08
 ```
 
-## Output Convention
+Full suite:
 
-Recommended output layout:
+```bash
+make final
+```
 
-- `outputs/<experiment-id>/<run-id>/fig*.pdf`
-- `outputs/<experiment-id>/<run-id>/*.csv`
-- `outputs/<experiment-id>/<run-id>/*summary*.txt`
+Cache-backed rerender:
 
-Do not commit generated artifacts unless intentionally versioned for publication.
+```bash
+make rerender
+```
 
-## Determinism Notes
+## Output Layout
 
-- Stochasticity is controlled through NumPy RNG seeds and SPSA seeds.
-- If shot-noise is enabled (`--shots > 0`), repeated runs with identical seeds should remain deterministic.
-- Different Python or NumPy versions can slightly change floating-point behavior; pin versions for strict reproduction.
+- final figures and tables: `output/exp01` to `output/exp08`
+- cached rerender payloads: `output/cache/exp02` to `output/cache/exp08`
+
+`Exp 1` is cheap enough that `make exp01-rerender` simply reruns it.
+
+## Canonical Final Defaults
+
+Unless an experiment sweeps over the variable:
+
+- `budget_evals = 2000`
+- `kind/family = periodic`
+- `periodic_K = 6`
+- `n = 12`
+- `p_edge = 0.45`
+- `lam_min = -5.0`
+- `lam_max = 5.0`
+- `lam0 = 0.8`
+- `graph_seed = 7`
+
+## Artifact Policy
+
+The publication repository intentionally keeps:
+
+- final plot PDFs
+- CSV and TeX exports
+- `SUMMARY.txt`
+- current cache directories for rerenderable experiments
+
+The repository does not keep exploratory or pre-renaming artifacts.
+
+## Push Checklist
+
+Before publishing or pushing:
+
+1. Run `make test`.
+2. Run `make rerender` if you changed only styling or docs around existing artifacts.
+3. Confirm `output/exp01` to `output/exp08` contain the expected final files.
+4. Confirm `git status` contains no legacy experiment wrappers or exploratory artifact directories.

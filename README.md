@@ -1,76 +1,83 @@
 # paramham
 
-Research code and Python package for studying **implicit differentiation (ID)** versus **black-box finite differences (FD)** in bilevel optimization of parametrized Max-Cut Hamiltonians.
+`paramham` is a research codebase and publication artifact repository for studying **implicit differentiation (ID)** versus **black-box finite differences (FD)** in bilevel optimization of parametrized Max-Cut Hamiltonians.
 
-## Scope
+This repository is intentionally trimmed to the final paper-facing experiment suite:
 
-`paramham` provides reusable simulation utilities plus experiment scripts used for paper-style studies:
-
-- graph and Hamiltonian family generation
-- VQE and QAOA statevector simulation
-- SPSA-based inner optimization
-- bilevel outer-loop metrics and plotting utilities
+- exactly **8 public experiments**
+- one clean output tree under `output/exp01` to `output/exp08`
+- cache-backed rerender support under `output/cache`
+- a single standard runner interface through `make`
 
 ## Installation
-
-Install from source for development:
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-After publishing, install from PyPI:
+## Standard Commands
+
+Run from the repository root:
 
 ```bash
-pip install paramham
+make test
+make exp01
+make exp02
+make final
+make rerender
 ```
 
-If `paramham` is unavailable on PyPI in your environment, use the fallback name documented in the release notes.
+The standard environment is handled by the `Makefile` (`PYTHONPATH=src`, `MPLCONFIGDIR=/tmp/mpl`).
 
-## Quickstart
+## Canonical Experiment Suite
 
-Run unit tests and lint checks:
+| Experiment | Public script | Output folder |
+| --- | --- | --- |
+| `Exp 1` | `experiments/exp01_id_vs_fd_core_demo.py` | `output/exp01` |
+| `Exp 2` | `experiments/exp02_budget_efficiency_multiseed.py` | `output/exp02` |
+| `Exp 3` | `experiments/exp03_readout_realism_best_mode.py` | `output/exp03` |
+| `Exp 4` | `experiments/exp04_robustness_sweep_periodic_k.py` | `output/exp04` |
+| `Exp 5` | `experiments/exp05_inner_budget_ablation.py` | `output/exp05` |
+| `Exp 6` | `experiments/exp06_graphclass_regime_heatmap.py` | `output/exp06` |
+| `Exp 7` | `experiments/exp07_multi_dimensional_outer_control.py` | `output/exp07` |
+| `Exp 8` | `experiments/exp08_vqe_vs_qaoa_readout_bridge.py` | `output/exp08` |
 
-```bash
-ruff check src tests experiments
-pytest -v
-```
+There are no legacy wrapper scripts in the public repo surface.
 
-Run one core experiment:
+## Canonical Final Defaults
 
-```bash
-python experiments/exp01_id_vs_fd_core_demo.py --kind periodic --n 12 --outer 30 --inner 20
-```
+Unless an experiment sweeps over that variable, the final paper runs use:
 
-## Experiments
+- `budget_evals = 2000`
+- `kind/family = periodic`
+- `periodic_K = 6`
+- `n = 12`
+- `p_edge = 0.45`
+- `lam_min = -5.0`
+- `lam_max = 5.0`
+- `lam0 = 0.8`
+- `graph_seed = 7`
 
-Canonical script names:
+Experiment-specific sweep settings are documented in [docs/experiments.md](docs/experiments.md).
 
-| Script | Purpose |
-| --- | --- |
-| `exp01_id_vs_fd_core_demo.py` | Core single-instance ID vs FD demo |
-| `exp01_id_vs_fd_core_demo_refined_plots.py` | Refined plotting variant of Exp 01 |
-| `exp02_budget_efficiency_multiseed.py` | Multi-seed budget efficiency analysis |
-| `exp02_budget_efficiency_t20_variant.py` | Budget efficiency variant with t=20 marker |
-| `exp03_readout_realism_best_mode.py` | Readout realism (best-of-S and mode) |
-| `exp04_robustness_sweep_periodic_k.py` | Robustness sweep over periodic difficulty `K` |
-| `exp05_inner_budget_ablation.py` | Inner-budget ablation (`iters x restarts`) |
-| `exp06_edgewise_lambda_vector.py` | Edge-wise outer-parameter experiment |
-| `exp07_vqe_vs_qaoa_readout_bridge.py` | VQE vs QAOA readout bridge |
-| `exp08_id_vs_fd_np_graphclass_heatmap.py` | `(n,p)` heatmap across graph classes |
+## Output Policy
 
-Legacy `experiment*.py` entrypoints are kept as deprecation wrappers through `v0.2.x` and are removed in `v0.3.0`.
+Versioned paper artifacts live in:
 
-## Reproducibility and Outputs
+- `output/exp01` to `output/exp08`
+- `output/cache/exp02` to `output/cache/exp08`
 
-- default outputs are stored under `outputs/` (per-script subdirectory)
-- runs should always set explicit seeds for deterministic comparisons
-- detailed conventions are documented in [docs/reproducibility.md](docs/reproducibility.md)
+Each experiment output folder contains:
 
-## Documentation Index
+- final figure PDFs
+- CSV and TeX exports where applicable
+- `SUMMARY.txt`
+
+## Documentation
 
 - [Experiment Reference](docs/experiments.md)
 - [Reproducibility Guide](docs/reproducibility.md)
+- [Output Manifest](output/README.md)
 - [Contributing](CONTRIBUTING.md)
 - [Release Process](RELEASING.md)
 - [Changelog](CHANGELOG.md)

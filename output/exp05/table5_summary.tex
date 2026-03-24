@@ -1,0 +1,21 @@
+\begin{table}[t]
+\centering
+\caption{Experiment 5 inner-budget ablation (periodic family by default). Each cell reports mean+-s.e.m. of dAUC_B = AUC_ID - AUC_BB-FD at fixed evaluation budget B, over paired random instances.}
+\label{tab:exp5_inner_budget}
+\small
+\begin{tabular}{ccc c}
+\toprule
+Restarts & Inner iters & $\Delta\mathrm{AUC}_B$ (mean $\pm$ s.e.m.) & Win rate \\
+\midrule
+1 & 14 & +0.0279 $\pm$ 0.0073 & 86\% \\
+1 & 28 & +0.0218 $\pm$ 0.0039 & 100\% \\
+1 & 42 & +0.0198 $\pm$ 0.0034 & 100\% \\
+2 & 14 & +0.0313 $\pm$ 0.0053 & 100\% \\
+2 & 28 & +0.0253 $\pm$ 0.0046 & 100\% \\
+2 & 42 & +0.0143 $\pm$ 0.0033 & 100\% \\
+4 & 14 & +0.0274 $\pm$ 0.0073 & 86\% \\
+4 & 28 & +0.0189 $\pm$ 0.0032 & 100\% \\
+4 & 42 & +0.0058 $\pm$ 0.0025 & 71\% \\
+\bottomrule
+\end{tabular}
+\end{table}

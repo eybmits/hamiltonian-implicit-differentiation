@@ -1,0 +1,22 @@
+Experiment 6: Heatmap over (n,p) showing ΔAUC_B(ID - BB-FD)
+Graph classes: er, ring, ws, ba
+n_list: [8, 10, 12, 14]
+p_list: [0.2, 0.35, 0.5, 0.65]
+seeds: [1, 2, 3] (N=3)
+graph_seed: 7
+
+Budget B (energy evals): 2000.0
+Inner iters: 28 | Outer max: 250
+VQE depth L: 2
+Family: kind=periodic periodic_K=6
+FD step: fd_c_frac=0.1
+
+Legend: cell text shows
+  line1: mean ΔAUC_B (ID - BB-FD)
+  line2: win-rate % (fraction seeds with ΔAUC_B>0)
+
+Saved outputs:
+  - runs6_graphclass_metrics.csv
+  - table6_graphclass_summary.csv
+  - fig6_graphclass_heatmap_deltaAUC.pdf
+  - SUMMARY.txt

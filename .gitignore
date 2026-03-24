@@ -28,3 +28,12 @@ experiment1/
 experiment5/
 experiment_final/
 outputs/
+
+# Local exploratory / scratch artifacts
+tmp/
+paper_id_vs_fd_1d_linear/
+paper_id_vs_fd_1d_periodic/
+paper_id_vs_fd_1d_quadratic/
+paper_id_vs_fd_multi_d/
+qaoa_vs_vqe/
+output/pdf/

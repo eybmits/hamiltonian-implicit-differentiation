@@ -1,0 +1,51 @@
+Experiment 8 | kind=periodic | seeds=8 | budget B=2000.0 evals | graph_seed=7
+Settings: eta0=0.25 eta_pow=0.4 step_clip=0.6 fd_c_frac=0.1 | readout_shots=128 | supp_shots=2,4,8,16,32,64,128
+
+Best-so-far ratios at budget B (mean +/- stderr):
+  Expectation  ID(VQE):   0.8734 +/- 0.0076
+  Expectation  ID(QAOA):  0.6273 +/- 0.0111
+  Readout best ID(VQE):   0.9140 +/- 0.0142
+  Readout best ID(QAOA):  0.9335 +/- 0.0135
+
+Normalized AUC over [0,B] (mean +/- stderr):
+  AUC Expectation ID(VQE):  0.7126 +/- 0.0061
+  AUC Expectation ID(QAOA): 0.5308 +/- 0.0094
+  AUC Readout     ID(VQE):  0.7697 +/- 0.0112
+  AUC Readout     ID(QAOA): 0.7718 +/- 0.0072
+
+Gaps at budget B:
+  Delta_expect = VQE - QAOA = 0.2461
+  Delta_readout= VQE - QAOA = -0.0195
+  Gap-closure from sampling = 1 - Delta_readout/Delta_expect = 1.079
+
+Tail factor (readout/expectation) at budget B:
+  tail_factor(VQE)  = 1.046
+  tail_factor(QAOA) = 1.488
+
+Tail metric: hit-rate P(cut >= (1-eps)J*) with eps=0.100
+  Tail@B ID(VQE):   0.2466 +/- 0.0933
+  Tail@B ID(QAOA):  0.0042 +/- 0.0016
+  AUC Tail ID(VQE): 0.0860 +/- 0.0324
+  AUC Tail ID(QAOA):0.0030 +/- 0.0010
+
+Readout shot sweep at budget B (best-of-S):
+  S=   2 | VQE 0.8962 +/- 0.0093 | QAOA 0.7980 +/- 0.0263
+  S=   4 | VQE 0.9016 +/- 0.0102 | QAOA 0.8282 +/- 0.0251
+  S=   8 | VQE 0.9016 +/- 0.0102 | QAOA 0.8436 +/- 0.0218
+  S=  16 | VQE 0.9016 +/- 0.0102 | QAOA 0.8680 +/- 0.0189
+  S=  32 | VQE 0.9085 +/- 0.0152 | QAOA 0.9039 +/- 0.0134
+  S=  64 | VQE 0.9126 +/- 0.0143 | QAOA 0.9086 +/- 0.0113
+  S= 128 | VQE 0.9140 +/- 0.0142 | QAOA 0.9335 +/- 0.0135
+
+Saved outputs:
+  - fig8_expect_vs_evals.pdf
+  - fig8_readout_vs_evals.pdf
+  - fig8_n_sweep.pdf
+  - fig8_tailprob_vs_evals.pdf
+  - fig8_readout_shots_sweep.pdf
+  - fig8_evals_vs_outer.pdf
+  - fig8_objective_pair_scatter.pdf
+  - fig8_readout_pair_scatter.pdf
+  - fig8_sixpack_collage.pdf
+  - runs8_bridge_metrics.csv
+  - SUMMARY.txt

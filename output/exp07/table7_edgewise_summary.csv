@@ -1,0 +1,4 @@
+metric,id_mean,id_stderr,fd_mean,fd_stderr
+Final best-so-far / $J^*$,0.835410,0.016926,0.723918,0.011780
+$\mathrm{AUC}_B$,0.780168,0.015160,0.678911,0.009607
+Outer steps within budget $B$,23.000000,0.000000,7.000000,0.000000

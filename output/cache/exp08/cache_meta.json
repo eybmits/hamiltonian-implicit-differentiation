@@ -1,0 +1,52 @@
+{
+  "L_vqe": 2,
+  "budget_evals": 2000.0,
+  "eta0": 0.25,
+  "eta_pow": 0.4,
+  "fd_c_frac": 0.1,
+  "graph_seed": 7,
+  "grid": 401,
+  "hit_eps": 0.1,
+  "inner": 100,
+  "kind": "periodic",
+  "lam0": 0.8,
+  "lam_max": 5.0,
+  "lam_min": -5.0,
+  "n": 12,
+  "n_sweep": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+  ],
+  "outer": 10,
+  "p_edge": 0.45,
+  "p_qaoa": 3,
+  "periodic_K": 6,
+  "readout_shots": 128,
+  "seeds": [
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+  ],
+  "shot_list": [
+    2,
+    4,
+    8,
+    16,
+    32,
+    64,
+    128
+  ],
+  "step_clip": 0.6,
+  "tail_metric": "hit",
+  "topk_frac": 0.01
+}

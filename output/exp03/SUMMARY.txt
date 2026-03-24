@@ -1,0 +1,19 @@
+Experiment 3 — Readout Realism
+
+Contents:
+- iters/: plots and tables against outer iteration count
+- budget/: plots and tables against cumulative energy evaluations
+
+Canonical defaults:
+- families=linear,quadratic,periodic
+- n=12
+- graph_seed=7
+- p_edge=0.45
+- periodic_K=6
+- budget_evals=2000
+- readout_shots=128
+- seed0=1
+- num_instances=20 per family
+
+Each subdirectory contains the final PDFs, CSV/TEX tables, and its own
+SUMMARY.txt for the specific x-axis choice.

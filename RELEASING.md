@@ -3,15 +3,17 @@
 ## Versioning Policy
 
 - Semantic Versioning (`MAJOR.MINOR.PATCH`)
-- `v0.2.x` keeps legacy experiment wrappers
-- remove legacy wrappers in `v0.3.0`
+- `v0.3.x` exposes exactly 8 public experiment entrypoints and no legacy wrappers
+- checked-in publication artifacts live under `output/exp01` to `output/exp08`
+- rerender caches live under `output/cache/exp02` to `output/cache/exp08`
 
 ## Pre-Release Checklist
 
 ```bash
+make test
 ruff check src tests experiments
 ruff format --check src tests experiments
-pytest -v
+python -m pytest -v
 python -m build
 twine check dist/*
 ```
@@ -29,6 +31,13 @@ git push origin vX.Y.Z
 ```
 
 5. GitHub Actions `release.yml` builds and publishes artifacts to PyPI
+
+## Publication Repo Checklist
+
+- ensure `README.md`, `docs/experiments.md`, and `docs/reproducibility.md` all describe the same canonical `Exp 1` to `Exp 8` suite
+- ensure `output/exp01` to `output/exp08` contain the intended final PDFs and `SUMMARY.txt`
+- ensure `output/cache/exp02` to `output/cache/exp08` are current if cache-backed rerendering is part of the release
+- ensure no legacy output folders or deprecated experiment wrappers remain in `git status`
 
 ## PyPI Trusted Publishing
 

@@ -2,7 +2,17 @@
 
 import matplotlib as mpl
 
-from paramham.plotting import COL_W, COLORS, FULL_W, H_COL, _savefig, set_pub_style
+from paramham.plotting import (
+    ADVANTAGE_CMAP,
+    COL_W,
+    COLOR_CYCLE,
+    COLORS,
+    FULL_W,
+    H_COL,
+    METHOD_CMAPS,
+    _savefig,
+    set_pub_style,
+)
 
 
 def test_colors_keys():
@@ -10,6 +20,8 @@ def test_colors_keys():
     assert "ID" in COLORS
     assert "FD" in COLORS
     assert "ENV" in COLORS
+    assert COLORS["ID"] == "#EE6677"
+    assert COLORS["FD"] == "#4477AA"
 
 
 def test_size_constants():
@@ -23,6 +35,7 @@ def test_set_pub_style():
     assert mpl.rcParams["font.family"] == ["serif"]
     assert mpl.rcParams["axes.spines.top"] is False
     assert mpl.rcParams["axes.spines.right"] is False
+    assert mpl.rcParams["axes.prop_cycle"].by_key()["color"][:2] == COLOR_CYCLE[:2]
 
 
 def test_set_pub_style_grid():
@@ -48,3 +61,9 @@ def test_savefig(tmp_path):
     assert path.exists()
     assert path.stat().st_size > 0
     plt.close(fig)
+
+
+def test_method_cmaps_exist():
+    assert "ID" in METHOD_CMAPS
+    assert "FD" in METHOD_CMAPS
+    assert ADVANTAGE_CMAP is not None

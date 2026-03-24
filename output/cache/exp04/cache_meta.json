@@ -1,0 +1,27 @@
+{
+  "K_list": [
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "L": 2,
+  "budget_evals": 2000.0,
+  "c_frac": 0.05,
+  "eta0": 0.35,
+  "eta_pow": 0.6,
+  "graph_seed": 7,
+  "grid": 401,
+  "id_outer_ref": 60,
+  "inner": 10,
+  "instances_per_K": 10,
+  "lam0": 0.8,
+  "lam_max": 5.0,
+  "lam_min": -5.0,
+  "n": 12,
+  "outer_max": 2000,
+  "p_edge": 0.45,
+  "seed": 7,
+  "step_clip": 0.6
+}

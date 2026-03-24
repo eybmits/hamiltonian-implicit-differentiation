@@ -1,0 +1,30 @@
+{
+  "L": 2,
+  "budget": 2000.0,
+  "budget_points": 500,
+  "c_frac": 0.05,
+  "eta0": 0.35,
+  "eta_pow": 0.6,
+  "families": [
+    "linear",
+    "quadratic",
+    "periodic"
+  ],
+  "graph_seed": 7,
+  "grid": 401,
+  "inner": 10,
+  "lam0": 0.8,
+  "lam_max": 5.0,
+  "lam_min": -5.0,
+  "n": 12,
+  "num_seeds": 5,
+  "outer": 100,
+  "p_edge": 0.45,
+  "periodic_K": 6,
+  "seed0": 1,
+  "shots_list": [
+    0,
+    256
+  ],
+  "step_clip": 0.6
+}

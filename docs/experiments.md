@@ -1,73 +1,80 @@
 # Experiment Reference
 
-This repository ships two entrypoint layers:
+This repository exposes exactly 8 public experiment entrypoints.
 
-- canonical scripts: `experiments/exp*.py`
-- legacy wrappers: `experiments/experiment*.py` (deprecated, removed in `v0.3.0`)
+## Canonical Defaults
 
-## Canonical Experiments
+Shared final defaults from `paramham.experiment_defaults`:
 
-### Exp 01: Core ID vs FD Demo
+- `budget_evals = 2000`
+- `kind/family = periodic`
+- `periodic_K = 6`
+- `n = 12`
+- `p_edge = 0.45`
+- `lam_min = -5.0`
+- `lam_max = 5.0`
+- `lam0 = 0.8`
+- `graph_seed = 7`
+
+Sweep experiments apply these defaults only to non-swept parameters.
+
+## Public Experiments
+
+### Exp 1: Core ID vs FD Demo
+
 - Script: `experiments/exp01_id_vs_fd_core_demo.py`
-- Purpose: single-instance bilevel demo and publication plots
-- Default output dir: `outputs/exp01_id_vs_fd_core_demo`
+- Standard command: `make exp01`
+- Output: `output/exp01`
+- Notes: renders `linear`, `quadratic`, `periodic`, plus the spectrum-compare collage
 
-### Exp 01 (Refined Plots)
-- Script: `experiments/exp01_id_vs_fd_core_demo_refined_plots.py`
-- Purpose: styling variant for Exp 01 figures
-- Default output dir: `outputs/exp01_id_vs_fd_core_demo_refined_plots`
+### Exp 2: Systematic Cost Advantage
 
-### Exp 02: Budget Efficiency (Multiseed)
 - Script: `experiments/exp02_budget_efficiency_multiseed.py`
-- Purpose: ID vs FD efficiency across seeds/families
-- Default output dir: `outputs/exp02_budget_efficiency_multiseed`
+- Standard command: `make exp02`
+- Output: `output/exp02`
+- Notes: final matched-budget grid with the `t=20` markers
 
-### Exp 02 (t=20 Variant)
-- Script: `experiments/exp02_budget_efficiency_t20_variant.py`
-- Purpose: variant plots with `t=20` marker emphasis
-- Default output dir: `outputs/exp02_budget_efficiency_t20_variant`
+### Exp 3: Readout Realism
 
-### Exp 03: Readout Realism
 - Script: `experiments/exp03_readout_realism_best_mode.py`
-- Purpose: expectation improvements versus sampled-solution quality
-- Default output dir: `outputs/exp03_readout_realism_best_mode`
+- Standard command: `make exp03`
+- Output: `output/exp03/iters` and `output/exp03/budget`
 
-### Exp 04: Robustness Sweep
+### Exp 4: Robustness Sweep
+
 - Script: `experiments/exp04_robustness_sweep_periodic_k.py`
-- Purpose: robustness over periodic difficulty parameter `K`
-- Default output dir: `outputs/exp04_robustness_sweep_periodic_k`
+- Standard command: `make exp04`
+- Output: `output/exp04`
 
-### Exp 05: Inner-Budget Ablation
+### Exp 5: Inner-Budget Ablation
+
 - Script: `experiments/exp05_inner_budget_ablation.py`
-- Purpose: sensitivity to inner optimizer budget and restarts
-- Default output dir: `outputs/exp05_inner_budget_ablation`
+- Standard command: `make exp05`
+- Output: `output/exp05`
 
-### Exp 06: Edge-wise Lambda Vector
-- Script: `experiments/exp06_edgewise_lambda_vector.py`
-- Purpose: high-dimensional outer optimization (`lambda` per edge)
-- Default output dir: `outputs/exp06_edgewise_lambda_vector`
+### Exp 6: Graph-Class Regime Heatmap
 
-### Exp 07: VQE vs QAOA Readout Bridge
-- Script: `experiments/exp07_vqe_vs_qaoa_readout_bridge.py`
-- Purpose: compare expectation and sampled-readout progress
-- Default output dir: `outputs/exp07_vqe_vs_qaoa_readout_bridge`
+- Script: `experiments/exp06_graphclass_regime_heatmap.py`
+- Standard command: `make exp06`
+- Output: `output/exp06`
 
-### Exp 08: ID vs FD Heatmap over Graph Classes
-- Script: `experiments/exp08_id_vs_fd_np_graphclass_heatmap.py`
-- Purpose: `(n,p)` heatmap studies across graph families
-- Default output dir: `outputs/exp08_id_vs_fd_np_graphclass_heatmap`
+### Exp 7: Multi-Dimensional Outer Control
 
-## Legacy-to-Canonical Mapping
+- Script: `experiments/exp07_multi_dimensional_outer_control.py`
+- Standard command: `make exp07`
+- Output: `output/exp07`
 
-| Legacy script | Canonical replacement |
-| --- | --- |
-| `experiment1.py` | `exp01_id_vs_fd_core_demo.py` |
-| `experiment1_plot.py` | `exp01_id_vs_fd_core_demo_refined_plots.py` |
-| `experiment2.py` | `exp02_budget_efficiency_multiseed.py` |
-| `experiment2_plot.py` | `exp02_budget_efficiency_t20_variant.py` |
-| `experiment3.py` | `exp03_readout_realism_best_mode.py` |
-| `experiment4.py` | `exp04_robustness_sweep_periodic_k.py` |
-| `experiment5.py` | `exp05_inner_budget_ablation.py` |
-| `experiment6.py` | `exp06_edgewise_lambda_vector.py` |
-| `experiment7.py` | `exp07_vqe_vs_qaoa_readout_bridge.py` |
-| `experiment8.py` | `exp08_id_vs_fd_np_graphclass_heatmap.py` |
+### Exp 8: VQE vs QAOA Readout Bridge
+
+- Script: `experiments/exp08_vqe_vs_qaoa_readout_bridge.py`
+- Standard command: `make exp08`
+- Output: `output/exp08`
+
+## Internal Helpers
+
+Two internal helper modules remain in `experiments/` for implementation reuse:
+
+- `_exp01_core_demo_impl.py`
+- `_exp02_budget_efficiency_impl.py`
+
+They are not part of the public experiment surface and are invoked only through the public entrypoints above.

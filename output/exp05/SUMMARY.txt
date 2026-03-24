@@ -1,0 +1,19 @@
+Experiment 5 -- Inner-budget ablation
+kind=periodic | periodic_K=6 | n=12 | p_edge=0.45 | graph_seed=7
+shots=0 | budget_evals=2000.0 | seeds=7
+inner_iters_list=[14, 28, 42]
+restarts_list=[1, 2, 4]
+
+Overall mean dAUC over all cells: +0.0214
+Overall win rate over all cells: 93.7%
+
+Per-cell summary (restarts, iters, mean+-sem, win_rate):
+  r=1, it=14: +0.0279 +- 0.0073, 86%
+  r=1, it=28: +0.0218 +- 0.0039, 100%
+  r=1, it=42: +0.0198 +- 0.0034, 100%
+  r=2, it=14: +0.0313 +- 0.0053, 100%
+  r=2, it=28: +0.0253 +- 0.0046, 100%
+  r=2, it=42: +0.0143 +- 0.0033, 100%
+  r=4, it=14: +0.0274 +- 0.0073, 86%
+  r=4, it=28: +0.0189 +- 0.0032, 100%
+  r=4, it=42: +0.0058 +- 0.0025, 71%

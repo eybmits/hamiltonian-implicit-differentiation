@@ -1,71 +1,61 @@
-# B.1 Quellcode und Versionierung
+# Appendix Reproduction Note
 
-Der vollständige Quellcode ist öffentlich verfügbar unter:
-`https://github.com/eybmits/parameterized-hamiltonians-id`
+The publication-facing repository exposes exactly eight public experiments and a
+single standard runner interface through `make`.
 
-Für die Reproduktion der Ergebnisse dieser Arbeit wurde exakt folgender Stand verwendet:
-Commit `e70d8bf` (permalink):
-`https://github.com/eybmits/parameterized-hamiltonians-id/commit/e70d8bf`
-
-Die Experimente wurden aus dem Repository-Root ausgeführt.
-
-# B.2 Setup der Laufumgebung
+## Environment
 
 ```bash
 git clone https://github.com/eybmits/parameterized-hamiltonians-id.git
 cd parameterized-hamiltonians-id
-git checkout e70d8bf
 
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-Validierung der Umgebung:
+## Validation
 
 ```bash
-ruff check src tests experiments
-ruff format --check src tests experiments
-pytest -v
+make test
 ```
 
-# B.3 Reproduction Commands
+## Canonical Reproduction Commands
 
-Die vorliegende Repository-Version verwendet dedizierte Experiment-Entrypoints (kein einzelner globaler Entrypoint mit `experiment-id + config`).
-Für jedes Experiment wird ein Run-Command angegeben; die PDF-Abbildungen werden pro Skript in den jeweiligen Output-Ordner geschrieben.
-
-Beispielstruktur:
+Per experiment:
 
 ```bash
-python experiments/<experiment_script>.py <args> --out outputs/<experiment-id>/<run-id>
+make exp01
+make exp02
+make exp03
+make exp04
+make exp05
+make exp06
+make exp07
+make exp08
 ```
 
-Beispiel (Kernexperiment):
+Full final suite:
 
 ```bash
-python experiments/exp01_id_vs_fd_core_demo.py \
-  --kind periodic --n 12 --outer 30 --inner 20 --fmt pdf \
-  --out outputs/exp01_id_vs_fd_core_demo/run01
+make final
 ```
 
-Beispiel (separate Plot-Variante):
+Cache-backed rerender after style-only changes:
 
 ```bash
-python experiments/exp01_id_vs_fd_core_demo_refined_plots.py \
-  --kind periodic --n 12 --outer 30 --inner 20 --fmt pdf \
-  --out outputs/exp01_id_vs_fd_core_demo_refined_plots/run01
+make rerender
 ```
 
-# B.4 Output-Konvention
+## Output Convention
 
-Alle Artefakte werden unter `outputs/<experiment-id>/<run-id>/` abgelegt, typischerweise als:
+Final paper artifacts are written to:
 
-- `*.pdf` (Abbildungen)
-- `*.csv` (Tabellen/Rohmetriken)
-- `*summary*.txt` (kompakte Ergebniszusammenfassungen)
+- `output/exp01` to `output/exp08`
 
-# B.5 Verweis in der Arbeit (Formulierungsvorschlag)
+Cache-backed rerender payloads are written to:
 
-"The source code and scripts used for all experiments are available at
-`https://github.com/eybmits/parameterized-hamiltonians-id`.
-All reported results were generated from commit `e70d8bf`, ensuring a fixed and reproducible code state."
+- `output/cache/exp02` to `output/cache/exp08`
+
+Each experiment directory contains the checked-in paper PDFs together with
+tables and `SUMMARY.txt`.

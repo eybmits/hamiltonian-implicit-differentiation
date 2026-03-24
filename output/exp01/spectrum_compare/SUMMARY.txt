@@ -1,0 +1,4 @@
+Experiment 1 — Spectrum compare
+families=linear,quadratic,periodic | n=12 | seed=7
+graph_seed=7 | p_edge=0.45 | periodic_K=6
+exp01_spectrum_compare_linear_quadratic_periodic_n12_seed7.pdf

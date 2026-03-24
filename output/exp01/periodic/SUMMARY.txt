@@ -1,0 +1,5 @@
+Experiment 1 — Core ID vs FD Demo
+family=periodic | n=12 | seed=7 | p_edge=0.45 | graph_seed=7
+periodic_K=6 | budget_evals=2000.0 | lam0=0.8
+final best ID=51.6047 | final best FD=51.8998
+final evals ID=1911.0 | final evals FD=1911.0

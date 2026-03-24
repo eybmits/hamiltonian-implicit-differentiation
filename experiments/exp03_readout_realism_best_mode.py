@@ -4,7 +4,7 @@
 exp03_readout_realism_best_mode.py
 ================================
 
-Experiment 1 (paper main/supp): Readout realism --- Best-of-S and Mode
+Experiment 3: Readout realism --- Best-of-S and Mode
 -------------------------------------------------------------------
 
 Reviewer question:
@@ -44,10 +44,10 @@ Plots:
                      (aligns with the budget-efficiency story in Fig. 0A)
 
 Outputs (saved in --out):
-  - fig1_readout_best_mode_<suffix>_xIters.<fmt>   or   _xBudget.<fmt>
-  - runs1_readout_metrics.csv
-  - table1_readout_summary.csv / .tex
-  - exp1_readout_summary.txt
+  - fig3_readout_best_mode_<suffix>_xIters.<fmt>   or   _xBudget.<fmt>
+  - runs3_readout_metrics.csv
+  - table3_readout_summary.csv / .tex
+  - SUMMARY.txt
 
 Example:
   python exp03_readout_realism_best_mode.py \
@@ -57,20 +57,30 @@ Example:
     --readout_shots 256 \
     --num_instances 20 \
     --xaxis iters \
-    --fmt pdf --out outputs/exp03_readout_realism_best_mode/run01
+    --fmt pdf --out output/exp03/iters
 
 """
 
 import argparse
+import json
 import math
 from pathlib import Path
 from typing import Dict, List
 
+import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import numpy as np
 
-from paramham.families import Family1D
-from paramham.graphs import generate_random_graph
+from paramham.experiment_defaults import (
+    CANONICAL_SETUP,
+    can_run_step,
+    generate_er_family1d_instance,
+    publication_cache_dir,
+    publication_output_dir,
+    vqe_fd_value_step_cost,
+    vqe_id_step_cost,
+)
+from paramham.io import parse_str_list, write_csv
 from paramham.maxcut import (
     build_cut_mask,
     classical_Jstar,
@@ -79,7 +89,7 @@ from paramham.maxcut import (
     precompute_z as precompute_z_big_endian,
 )
 from paramham.metrics import mean_stderr, step_interp
-from paramham.plotting import COLORS, FULL_W, _savefig, set_pub_style
+from paramham.plotting import COL_W, COLORS, FULL_W, H_COL, _savefig, add_panel_legend, set_pub_style
 
 # ---------------------------------------------------------------------------
 # Shared library imports
@@ -104,6 +114,205 @@ def classical_Jstar_max(fam, cut_mask, grid_points):
     """Wrapper: return only the J* float from the shared classical_Jstar."""
     J, _ = classical_Jstar(fam, cut_mask, grid_points)
     return J
+
+
+def _family_label(kind: str) -> str:
+    return {
+        "linear": "Linear",
+        "quadratic": "Quadratic",
+        "periodic": "Periodic",
+    }.get(str(kind), str(kind).title())
+
+
+def _metric_ylabel(metric: str) -> str:
+    if metric == "bestS":
+        return r"Best-of-$S$ (best cut so far) / $J^*$"
+    if metric == "mode":
+        return r"Mode cut / $J^*$"
+    raise ValueError(f"Unknown metric: {metric}")
+
+
+def _cache_default_dir(out: Path, xaxis: str) -> Path:
+    if str(xaxis) == "iters":
+        return publication_cache_dir("exp03", "iters")
+    return publication_cache_dir("exp03", str(xaxis))
+
+
+def _cache_meta(args, families) -> dict:
+    return {
+        "seed0": int(args.seed0),
+        "num_instances": int(args.num_instances),
+        "families": [str(f) for f in families],
+        "periodic_K": int(args.periodic_K),
+        "n": int(args.n),
+        "p_edge": float(args.p_edge),
+        "graph_seed": int(args.graph_seed),
+        "lam_min": float(args.lam_min),
+        "lam_max": float(args.lam_max),
+        "lam0": float(args.lam0),
+        "grid": int(args.grid),
+        "outer": int(args.outer),
+        "inner": int(args.inner),
+        "L": int(args.L),
+        "eta0": float(args.eta0),
+        "eta_pow": float(args.eta_pow),
+        "step_clip": None if args.step_clip is None else float(args.step_clip),
+        "c_frac": float(args.c_frac),
+        "budget_evals": float(args.budget_evals),
+        "readout_shots": int(args.readout_shots),
+        "xaxis": str(args.xaxis),
+        "budget_points": int(args.budget_points),
+    }
+
+
+def _metric_arrays(payload: dict, metric: str):
+    if metric == "bestS":
+        return payload["metric_id_bestS"], payload["metric_fd_bestS"]
+    if metric == "mode":
+        return payload["metric_id_mode"], payload["metric_fd_mode"]
+    raise ValueError(f"Unknown metric: {metric}")
+
+
+def _metric_t20_markers(payload: dict, metric: str):
+    if metric == "bestS":
+        return payload.get("marker_id_bestS_t20"), payload.get("marker_fd_bestS_t20")
+    if metric == "mode":
+        return payload.get("marker_id_mode_t20"), payload.get("marker_fd_mode_t20")
+    raise ValueError(f"Unknown metric: {metric}")
+
+
+def _point_to_array(point) -> np.ndarray:
+    if point is None:
+        return np.array([np.nan, np.nan], dtype=float)
+    return np.asarray(point, dtype=float)
+
+
+def _array_to_point(arr):
+    arr = np.asarray(arr, dtype=float)
+    if arr.shape != (2,) or not np.all(np.isfinite(arr)):
+        return None
+    return (float(arr[0]), float(arr[1]))
+
+
+def _avg_eval_metric_coord(eval_list: List[np.ndarray], metric_list: List[np.ndarray], target_idx: int = 19):
+    xs, ys = [], []
+    for ev, metric in zip(eval_list, metric_list):
+        if target_idx < ev.size and target_idx < metric.size:
+            xs.append(float(ev[target_idx]))
+            ys.append(float(metric[target_idx]))
+    if not xs:
+        return None
+    return (float(np.mean(xs)), float(np.mean(ys)))
+
+
+def _metric_summary_rows(rows: List[Dict[str, float]], family: str) -> list[dict]:
+    def _summ(col: str):
+        vals = np.array([row[col] for row in rows], float)
+        mu = float(np.nanmean(vals))
+        se = float(np.nanstd(vals, ddof=1) / math.sqrt(max(1, np.sum(np.isfinite(vals)))))
+        return mu, se
+
+    out = []
+    for label, id_col, fd_col in [
+        ("Best-of-S final / J*", "bestS_final_ID", "bestS_final_FD"),
+        ("Mode final / J*", "mode_final_ID", "mode_final_FD"),
+        ("Best-of-S AUC (steps)", "bestS_auc_ID", "bestS_auc_FD"),
+        ("Mode AUC (steps)", "mode_auc_ID", "mode_auc_FD"),
+    ]:
+        idm, ids = _summ(id_col)
+        fdm, fds = _summ(fd_col)
+        out.append(
+            {
+                "family": family,
+                "metric": label,
+                "ID_mean": f"{idm:.6f}",
+                "ID_stderr": f"{ids:.6f}",
+                "BD_mean": f"{fdm:.6f}",
+                "BD_stderr": f"{fds:.6f}",
+            }
+        )
+    return out
+
+
+def save_exp03_cache(cache_dir: Path, meta: dict, payloads: dict, rows_by_family: dict) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    arrays = {}
+    for family, payload in payloads.items():
+        prefix = f"{family}__"
+        for key, value in payload.items():
+            arrays[prefix + key] = np.asarray(value, dtype=float)
+    np.savez_compressed(cache_dir / "curves_cache.npz", **arrays)
+    (cache_dir / "cache_meta.json").write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
+    (cache_dir / "rows_by_family.json").write_text(json.dumps(rows_by_family, indent=2), encoding="utf-8")
+
+
+def load_exp03_cache(cache_dir: Path, meta_expected: dict):
+    meta_path = cache_dir / "cache_meta.json"
+    npz_path = cache_dir / "curves_cache.npz"
+    rows_path = cache_dir / "rows_by_family.json"
+    if not meta_path.exists() or not npz_path.exists() or not rows_path.exists():
+        return None
+    try:
+        meta_found = json.loads(meta_path.read_text(encoding="utf-8"))
+        rows_by_family = json.loads(rows_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if meta_found != meta_expected:
+        return None
+
+    payloads = {}
+    with np.load(npz_path) as data:
+        for family in meta_expected["families"]:
+            prefix = f"{family}__"
+            required = [
+                prefix + "x",
+                prefix + "metric_id_bestS",
+                prefix + "metric_fd_bestS",
+                prefix + "metric_id_mode",
+                prefix + "metric_fd_mode",
+            ]
+            if any(key not in data for key in required):
+                return None
+            payload = {}
+            for key in required:
+                short = key[len(prefix) :]
+                payload[short] = np.asarray(data[key], dtype=float)
+            for short in [
+                "marker_id_bestS_t20",
+                "marker_fd_bestS_t20",
+                "marker_id_mode_t20",
+                "marker_fd_mode_t20",
+            ]:
+                full = prefix + short
+                payload[short] = _array_to_point(np.asarray(data[full], dtype=float)) if full in data else None
+            payloads[family] = payload
+    return payloads, rows_by_family
+
+
+def interesting_readout_ylim(
+    payloads: dict, families: list[str], metric: str, *, ymax: float = 1.01
+) -> tuple[float, float]:
+    mins = []
+    maxs = []
+    for family in families:
+        y_id, y_fd = _metric_arrays(payloads[family], metric)
+        mu_id, se_id = mean_stderr(y_id, axis=0)
+        mu_fd, se_fd = mean_stderr(y_fd, axis=0)
+        for arr in (mu_id - se_id, mu_fd - se_fd, mu_id, mu_fd, mu_id + se_id, mu_fd + se_fd):
+            vals = np.asarray(arr, dtype=float)
+            vals = vals[np.isfinite(vals) & (vals > 0.05)]
+            if vals.size:
+                mins.append(float(np.min(vals)))
+                maxs.append(float(np.max(vals)))
+    if not mins:
+        return (0.0, float(ymax))
+    ymin = min(mins) - 0.02
+    ymax_data = max(maxs) + 0.015
+    ymin = math.floor(ymin / 0.02) * 0.02
+    ymax_plot = math.ceil(ymax_data / 0.02) * 0.02
+    ymin = float(np.clip(ymin, 0.72, 0.94))
+    ymax_plot = float(np.clip(max(ymax_plot, ymin + 0.10), ymin + 0.10, ymax))
+    return (ymin, ymax_plot)
 
 
 # ==============================================================================
@@ -153,7 +362,7 @@ def plot_2panel_iters(path: Path, best_id: np.ndarray, best_fd: np.ndarray, mode
 
     # Legend on BOTH panels (requested)
     for ax in axs:
-        ax.legend(loc="lower right", frameon=False)
+        add_panel_legend(ax, placement="below", ncol=2)
 
     _savefig(fig, path)
     plt.close(fig)
@@ -206,7 +415,173 @@ def plot_2panel_budget(
 
     # Legend on BOTH panels (requested)
     for ax in axs:
-        ax.legend(loc="lower right", frameon=False)
+        add_panel_legend(ax, placement="below", ncol=2)
+
+    _savefig(fig, path)
+    plt.close(fig)
+
+
+def _draw_family_metric_panel(
+    ax,
+    *,
+    x: np.ndarray,
+    y_id: np.ndarray,
+    y_fd: np.ndarray,
+    family_label: str,
+    xaxis: str,
+    metric: str,
+    y_limits: tuple[float, float],
+    show_xlabel: bool,
+    marker_id_t20=None,
+    marker_fd_t20=None,
+):
+    mu_id, se_id = mean_stderr(y_id, axis=0)
+    mu_fd, se_fd = mean_stderr(y_fd, axis=0)
+
+    ax.axhline(1.0, color=COLORS["REFERENCE"], lw=1.0, ls=":", alpha=0.85, zorder=1, label="_nolegend_")
+    ax.fill_between(x, mu_fd - se_fd, mu_fd + se_fd, color=COLORS["FD"], alpha=0.16, linewidth=0, zorder=1)
+    ax.fill_between(x, mu_id - se_id, mu_id + se_id, color=COLORS["ID"], alpha=0.18, linewidth=0, zorder=2)
+    ax.plot(x, mu_fd, color=COLORS["FD"], lw=1.7, ls="--", label="VQE + BD", zorder=3)
+    ax.plot(x, mu_id, color=COLORS["ID"], lw=1.9, ls="-", label="VQE + ID", zorder=4)
+
+    if xaxis == "budget":
+        if marker_id_t20 is not None:
+            x_id, y_id_marker = marker_id_t20
+            if np.isfinite(x_id) and np.isfinite(y_id_marker):
+                ax.plot(
+                    x_id,
+                    y_id_marker,
+                    marker="o",
+                    color=COLORS["ID"],
+                    markersize=5.5,
+                    zorder=10,
+                    markeredgecolor="white",
+                    markeredgewidth=0.9,
+                )
+                ax.annotate(
+                    "t=20",
+                    (x_id, y_id_marker),
+                    xytext=(0, 10),
+                    textcoords="offset points",
+                    color=COLORS["ID"],
+                    fontsize=7,
+                    ha="center",
+                    fontweight="bold",
+                )
+        if marker_fd_t20 is not None:
+            x_fd, y_fd_marker = marker_fd_t20
+            if np.isfinite(x_fd) and np.isfinite(y_fd_marker):
+                ax.plot(
+                    x_fd,
+                    y_fd_marker,
+                    marker="s",
+                    color=COLORS["FD"],
+                    markersize=5.2,
+                    zorder=10,
+                    markeredgecolor="white",
+                    markeredgewidth=0.9,
+                )
+                ax.annotate(
+                    "t=20",
+                    (x_fd, y_fd_marker),
+                    xytext=(0, -12),
+                    textcoords="offset points",
+                    color=COLORS["FD"],
+                    fontsize=7,
+                    ha="center",
+                    fontweight="bold",
+                )
+
+    ax.set_ylim(*y_limits)
+    ax.set_xlim(float(x[0]), float(x[-1]))
+    ax.set_ylabel(_metric_ylabel(metric))
+    if show_xlabel:
+        ax.set_xlabel(r"Outer iteration $t$" if xaxis == "iters" else "Energy evaluations")
+
+    ax.text(
+        0.03,
+        0.93,
+        family_label,
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=8,
+        color=COLORS["MUTED"],
+        bbox=dict(boxstyle="round,pad=0.22", facecolor="white", edgecolor="0.85", alpha=0.95),
+    )
+
+
+def plot_family_metric_grid(
+    path: Path,
+    payloads: dict,
+    families: list[str],
+    *,
+    metric: str,
+    xaxis: str,
+    y_limits: tuple[float, float],
+):
+    set_pub_style(grid=True, base_size=8)
+    plt.rcParams["axes.grid"] = True
+    plt.rcParams["grid.alpha"] = 0.18
+    plt.rcParams["grid.linestyle"] = "--"
+
+    n_rows = len(families)
+    fig_w = FULL_W / 2.0 if len(families) > 1 else COL_W
+    fig_h = n_rows * (H_COL + 0.10) + 0.52
+    fig = plt.figure(figsize=(fig_w, fig_h), constrained_layout=True)
+    gs = fig.add_gridspec(n_rows + 1, 1, height_ratios=[1.0] * n_rows + [0.16])
+    axs = []
+    for r, family in enumerate(families):
+        sharex = axs[0] if axs else None
+        ax = fig.add_subplot(gs[r, 0], sharex=sharex)
+        axs.append(ax)
+        payload = payloads[family]
+        y_id, y_fd = _metric_arrays(payload, metric)
+        marker_id_t20, marker_fd_t20 = _metric_t20_markers(payload, metric)
+        _draw_family_metric_panel(
+            ax,
+            x=np.asarray(payload["x"], dtype=float),
+            y_id=y_id,
+            y_fd=y_fd,
+            family_label=_family_label(family),
+            xaxis=xaxis,
+            metric=metric,
+            y_limits=y_limits,
+            show_xlabel=(r == n_rows - 1),
+            marker_id_t20=marker_id_t20,
+            marker_fd_t20=marker_fd_t20,
+        )
+
+    legend_ax = fig.add_subplot(gs[-1, 0])
+    legend_ax.axis("off")
+    handles = [
+        mlines.Line2D([], [], color=COLORS["ID"], lw=1.9, label="VQE + ID"),
+        mlines.Line2D([], [], color=COLORS["FD"], lw=1.7, ls="--", label="VQE + BD"),
+    ]
+    ncol = 2
+    if xaxis == "budget":
+        handles.extend(
+            [
+                mlines.Line2D([], [], color=COLORS["REFERENCE"], lw=1.0, ls=":", label=r"Reference $J^*/J^* = 1$"),
+                mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label=r"ID at $t=20$"),
+                mlines.Line2D([], [], color=COLORS["FD"], marker="s", ls="None", ms=5, label=r"BD at $t=20$"),
+            ]
+        )
+        ncol = 3
+    legend_ax.legend(
+        handles=handles,
+        loc="center",
+        ncol=ncol,
+        frameon=True,
+        fancybox=False,
+        framealpha=0.94,
+        facecolor="white",
+        edgecolor="0.85",
+        borderpad=0.35,
+        columnspacing=1.2,
+        handlelength=1.8,
+        handletextpad=0.6,
+    )
 
     _savefig(fig, path)
     plt.close(fig)
@@ -293,6 +668,7 @@ def run_outer_with_readout(
     mode: str,
     c_frac: float,
     readout_shots: int,
+    budget_evals: float,
 ):
     """
     Returns arrays per outer step:
@@ -314,7 +690,11 @@ def run_outer_with_readout(
 
     out = {k: [] for k in ["lam_pre", "lam", "evals_cum", "best_of_S", "mode_cut"]}
 
+    step_cost = vqe_id_step_cost(inner) if mode == "ID" else vqe_fd_value_step_cost(inner)
+
     for t in range(1, outer + 1):
+        if not can_run_step(evals_used=evals, budget_evals=budget_evals, step_cost=step_cost):
+            break
         out["lam_pre"].append(lam)
 
         # center inner solve
@@ -401,84 +781,30 @@ def auc_over_steps(values: np.ndarray) -> float:
     return float(area / (x[-1] - x[0] + 1e-12))
 
 
-# ==============================================================================
-# CLI + experiment driver
-# ==============================================================================
-
-
-def parse_args():
-    p = argparse.ArgumentParser()
-    p.add_argument("--out", type=str, default="outputs/exp03_readout_realism_best_mode")
-    p.add_argument("--fmt", type=str, default="pdf", choices=["pdf", "png", "svg"])
-
-    # instances / seeds
-    p.add_argument("--seed0", type=int, default=1)
-    p.add_argument("--num_instances", type=int, default=20)
-
-    # problem
-    p.add_argument("--family", type=str, default="quadratic", choices=["linear", "quadratic", "periodic"])
-    p.add_argument("--periodic_K", type=int, default=6)
-    p.add_argument("--n", type=int, default=12)
-    p.add_argument("--p_edge", type=float, default=0.45)
-    p.add_argument("--lam_min", type=float, default=-5.0)
-    p.add_argument("--lam_max", type=float, default=5.0)
-    p.add_argument("--lam0", type=float, default=4)
-    p.add_argument("--grid", type=int, default=401)
-
-    # optimization
-    p.add_argument("--outer", type=int, default=30)
-    p.add_argument("--inner", type=int, default=10)
-    p.add_argument("--L", type=int, default=2)
-    p.add_argument("--eta0", type=float, default=0.35)
-    p.add_argument("--eta_pow", type=float, default=0.6)
-    p.add_argument("--step_clip", type=float, default=0.6)
-    p.add_argument("--c_frac", type=float, default=0.05)
-
-    # readout
-    p.add_argument("--readout_shots", type=int, default=128)
-
-    # plotting axis choice
-    p.add_argument(
-        "--xaxis",
-        type=str,
-        default="iters",
-        choices=["iters", "budget"],
-        help="Plot x-axis: 'iters' (outer iteration) or 'budget' (energy evaluations).",
-    )
-    p.add_argument(
-        "--budget_points", type=int, default=220, help="Number of points for shared budget grid when --xaxis=budget."
-    )
-
-    return p.parse_args()
-
-
-def main():
-    a = parse_args()
-    outdir = Path(a.out)
-    outdir.mkdir(parents=True, exist_ok=True)
-
-    # Precompute Z once (depends only on n)
-    Z = precompute_z_big_endian(a.n)
-
-    # Collect per-instance traces
+def collect_family_payload(a, family: str, Z: np.ndarray):
     best_id_list: List[np.ndarray] = []
     best_fd_list: List[np.ndarray] = []
     mode_id_list: List[np.ndarray] = []
     mode_fd_list: List[np.ndarray] = []
     eval_id_list: List[np.ndarray] = []
     eval_fd_list: List[np.ndarray] = []
-
     rows: List[Dict[str, float]] = []
 
     for r in range(a.num_instances):
         seed = a.seed0 + r
-        rng = np.random.default_rng(to_uint_seed(seed))
-
-        edges = generate_random_graph(a.n, a.p_edge, rng)
-        if not edges:
+        edges, fam = generate_er_family1d_instance(
+            a.n,
+            a.p_edge,
+            family,
+            (a.lam_min, a.lam_max),
+            graph_seed=a.graph_seed,
+            periodic_K=a.periodic_K,
+            instance_id=seed,
+            safety_bounds=False,
+        )
+        if not edges or fam is None:
             continue
         cut_mask = build_cut_mask(edges, Z)
-        fam = Family1D(len(edges), a.family, (a.lam_min, a.lam_max), rng, periodic_K=a.periodic_K, safety_bounds=False)
 
         J_star = classical_Jstar_max(fam, cut_mask, a.grid)
         if not np.isfinite(J_star) or J_star <= 0:
@@ -501,6 +827,7 @@ def main():
             "ID",
             a.c_frac,
             a.readout_shots,
+            a.budget_evals,
         )
         hist_fd = run_outer_with_readout(
             a.n,
@@ -519,9 +846,9 @@ def main():
             "FD_VALUE",
             a.c_frac,
             a.readout_shots,
+            a.budget_evals,
         )
 
-        # Normalize
         best_id = np.maximum.accumulate(hist_id["best_of_S"]) / J_star
         best_fd = np.maximum.accumulate(hist_fd["best_of_S"]) / J_star
         mode_id = hist_id["mode_cut"] / J_star
@@ -538,13 +865,15 @@ def main():
             {
                 "instance": r,
                 "seed": seed,
-                "family": a.family,
-                "K": float(a.periodic_K) if a.family == "periodic" else float("nan"),
+                "family": family,
+                "K": float(a.periodic_K) if family == "periodic" else float("nan"),
                 "n": float(a.n),
                 "p_edge": float(a.p_edge),
+                "graph_seed": float(a.graph_seed),
                 "outer": float(a.outer),
                 "inner": float(a.inner),
                 "L": float(a.L),
+                "budget_evals": float(a.budget_evals),
                 "readout_shots": float(a.readout_shots),
                 "J_star": float(J_star),
                 "evals_final_ID": float(hist_id["evals_cum"][-1]),
@@ -561,87 +890,228 @@ def main():
         )
 
     if not best_id_list:
-        raise RuntimeError("No instances generated (graph had 0 edges). Try increasing p_edge or changing seed0.")
-
-    # Stack for iteration plot
-    best_id_all = np.vstack(best_id_list)
-    best_fd_all = np.vstack(best_fd_list)
-    mode_id_all = np.vstack(mode_id_list)
-    mode_fd_all = np.vstack(mode_fd_list)
-
-    N = best_id_all.shape[0]
-    suf = f"{a.family}_n{a.n}_S{a.readout_shots}_seed0{a.seed0}_N{N}"
+        raise RuntimeError(f"No instances generated for family={family}. Try increasing p_edge or changing seed0.")
 
     if a.xaxis == "iters":
-        fig_path = outdir / f"fig1_readout_best_mode_{suf}_xIters.{a.fmt}"
-        plot_2panel_iters(fig_path, best_id_all, best_fd_all, mode_id_all, mode_fd_all)
+        T_common = min(
+            min(arr.size for arr in best_id_list),
+            min(arr.size for arr in best_fd_list),
+            min(arr.size for arr in mode_id_list),
+            min(arr.size for arr in mode_fd_list),
+        )
+        payload = {
+            "x": np.arange(1, T_common + 1, dtype=float),
+            "metric_id_bestS": np.vstack([arr[:T_common] for arr in best_id_list]),
+            "metric_fd_bestS": np.vstack([arr[:T_common] for arr in best_fd_list]),
+            "metric_id_mode": np.vstack([arr[:T_common] for arr in mode_id_list]),
+            "metric_fd_mode": np.vstack([arr[:T_common] for arr in mode_fd_list]),
+            "marker_id_bestS_t20": _point_to_array(_avg_eval_metric_coord(eval_id_list, best_id_list)),
+            "marker_fd_bestS_t20": _point_to_array(_avg_eval_metric_coord(eval_fd_list, best_fd_list)),
+            "marker_id_mode_t20": _point_to_array(_avg_eval_metric_coord(eval_id_list, mode_id_list)),
+            "marker_fd_mode_t20": _point_to_array(_avg_eval_metric_coord(eval_fd_list, mode_fd_list)),
+        }
     else:
-        # Shared budget grid up to the smallest final budget across all runs and both methods
-        B_id = np.array([row["evals_final_ID"] for row in rows], float)
-        B_fd = np.array([row["evals_final_FD"] for row in rows], float)
-        B_common = float(np.nanmin(np.minimum(B_id, B_fd)))
-        if not np.isfinite(B_common) or B_common <= 0:
-            B_common = float(np.nanmin(B_id))
-        budget_grid = np.linspace(0.0, B_common, int(a.budget_points))
+        budget_grid = np.linspace(0.0, float(a.budget_evals), int(a.budget_points))
+        payload = {
+            "x": budget_grid,
+            "metric_id_bestS": np.vstack(
+                [step_interp(ev, y, budget_grid) for ev, y in zip(eval_id_list, best_id_list)]
+            ),
+            "metric_fd_bestS": np.vstack(
+                [step_interp(ev, y, budget_grid) for ev, y in zip(eval_fd_list, best_fd_list)]
+            ),
+            "metric_id_mode": np.vstack([step_interp(ev, y, budget_grid) for ev, y in zip(eval_id_list, mode_id_list)]),
+            "metric_fd_mode": np.vstack([step_interp(ev, y, budget_grid) for ev, y in zip(eval_fd_list, mode_fd_list)]),
+            "marker_id_bestS_t20": _point_to_array(_avg_eval_metric_coord(eval_id_list, best_id_list)),
+            "marker_fd_bestS_t20": _point_to_array(_avg_eval_metric_coord(eval_fd_list, best_fd_list)),
+            "marker_id_mode_t20": _point_to_array(_avg_eval_metric_coord(eval_id_list, mode_id_list)),
+            "marker_fd_mode_t20": _point_to_array(_avg_eval_metric_coord(eval_fd_list, mode_fd_list)),
+        }
+    return payload, rows
 
-        best_id_grid = np.vstack([step_interp(ev, y, budget_grid) for ev, y in zip(eval_id_list, best_id_list)])
-        best_fd_grid = np.vstack([step_interp(ev, y, budget_grid) for ev, y in zip(eval_fd_list, best_fd_list)])
-        mode_id_grid = np.vstack([step_interp(ev, y, budget_grid) for ev, y in zip(eval_id_list, mode_id_list)])
-        mode_fd_grid = np.vstack([step_interp(ev, y, budget_grid) for ev, y in zip(eval_fd_list, mode_fd_list)])
 
-        fig_path = outdir / f"fig1_readout_best_mode_{suf}_xBudget.{a.fmt}"
-        plot_2panel_budget(fig_path, budget_grid, best_id_grid, best_fd_grid, mode_id_grid, mode_fd_grid)
+# ==============================================================================
+# CLI + experiment driver
+# ==============================================================================
 
-    # Save per-instance CSV
-    import csv
 
-    csv_path = outdir / "runs1_readout_metrics.csv"
-    with open(csv_path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-        w.writeheader()
-        for row in rows:
-            w.writerow(row)
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--out", type=str, default=None)
+    p.add_argument("--cache_dir", type=str, default=None)
+    p.add_argument("--fmt", type=str, default="pdf", choices=["pdf", "png", "svg"])
+    p.add_argument("--recompute", action="store_true")
+    p.add_argument("--render_only", action="store_true")
 
-    # Summary table (mean +/- stderr over instances)
-    def _summ(col: str):
-        vals = np.array([row[col] for row in rows], float)
-        mu = float(np.nanmean(vals))
-        se = float(np.nanstd(vals, ddof=1) / math.sqrt(max(1, np.sum(np.isfinite(vals)))))
-        return mu, se
+    # instances / seeds
+    p.add_argument("--seed0", type=int, default=1)
+    p.add_argument("--num_instances", type=int, default=20)
 
-    summary = [
-        ("Best-of-S final / J*",) + _summ("bestS_final_ID") + _summ("bestS_final_FD"),
-        ("Mode final / J*",) + _summ("mode_final_ID") + _summ("mode_final_FD"),
-        ("Best-of-S AUC (steps)",) + _summ("bestS_auc_ID") + _summ("bestS_auc_FD"),
-        ("Mode AUC (steps)",) + _summ("mode_auc_ID") + _summ("mode_auc_FD"),
-    ]
+    # problem
+    p.add_argument("--family", type=str, default=None, choices=["linear", "quadratic", "periodic"])
+    p.add_argument("--families", type=str, default="linear,quadratic,periodic")
+    p.add_argument("--periodic_K", type=int, default=CANONICAL_SETUP.periodic_K)
+    p.add_argument("--n", type=int, default=CANONICAL_SETUP.n)
+    p.add_argument("--p_edge", type=float, default=CANONICAL_SETUP.p_edge)
+    p.add_argument("--graph_seed", type=int, default=CANONICAL_SETUP.graph_seed)
+    p.add_argument("--lam_min", type=float, default=CANONICAL_SETUP.lam_min)
+    p.add_argument("--lam_max", type=float, default=CANONICAL_SETUP.lam_max)
+    p.add_argument("--lam0", type=float, default=CANONICAL_SETUP.lam0)
+    p.add_argument("--grid", type=int, default=401)
 
-    table_csv = outdir / "table1_readout_summary.csv"
-    with open(table_csv, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["metric", "ID_mean", "ID_stderr", "BD_mean", "BD_stderr"])
-        for met, idm, ids, fdm, fds in summary:
-            w.writerow([met, f"{idm:.6f}", f"{ids:.6f}", f"{fdm:.6f}", f"{fds:.6f}"])
+    # optimization
+    p.add_argument("--outer", type=int, default=100)
+    p.add_argument("--inner", type=int, default=10)
+    p.add_argument("--L", type=int, default=2)
+    p.add_argument("--eta0", type=float, default=0.35)
+    p.add_argument("--eta_pow", type=float, default=0.6)
+    p.add_argument("--step_clip", type=float, default=0.6)
+    p.add_argument("--c_frac", type=float, default=0.05)
+    p.add_argument("--budget_evals", type=float, default=CANONICAL_SETUP.budget_evals)
 
-    table_tex = outdir / "table1_readout_summary.tex"
-    with open(table_tex, "w") as f:
+    # readout
+    p.add_argument("--readout_shots", type=int, default=128)
+
+    # plotting axis choice
+    p.add_argument(
+        "--xaxis",
+        type=str,
+        default="iters",
+        choices=["iters", "budget"],
+        help="Plot x-axis: 'iters' (outer iteration) or 'budget' (energy evaluations).",
+    )
+    p.add_argument(
+        "--budget_points", type=int, default=220, help="Number of points for shared budget grid when --xaxis=budget."
+    )
+    p.add_argument("--metric", type=str, default="bestS", choices=["bestS", "mode", "both"])
+    p.add_argument("--ymin", type=float, default=None)
+    p.add_argument("--ymax", type=float, default=1.01)
+
+    return p.parse_args()
+
+
+def main():
+    a = parse_args()
+    outdir = (
+        Path(a.out)
+        if a.out is not None
+        else publication_output_dir("exp03", "budget" if a.xaxis == "budget" else "iters")
+    )
+    outdir.mkdir(parents=True, exist_ok=True)
+    families = [a.family] if a.family is not None else parse_str_list(a.families)
+    cache_dir = Path(a.cache_dir) if a.cache_dir is not None else _cache_default_dir(outdir, a.xaxis)
+    meta = _cache_meta(a, families)
+
+    cached = None if a.recompute else load_exp03_cache(cache_dir, meta)
+    if cached is not None:
+        payloads, rows_by_family = cached
+        print(f"[cache] Loaded readout payloads from {cache_dir.resolve()}")
+    elif a.render_only:
+        raise SystemExit(f"No matching cache found in {cache_dir}")
+    else:
+        Z = precompute_z_big_endian(a.n)
+        payloads = {}
+        rows_by_family = {}
+        for family in families:
+            payloads[family], rows_by_family[family] = collect_family_payload(a, family, Z)
+            N_family = int(payloads[family]["metric_id_bestS"].shape[0])
+            print(f"[done] {family:9s} | N={N_family}")
+        save_exp03_cache(cache_dir, meta, payloads, rows_by_family)
+        print(f"[cache] Saved readout payloads to {cache_dir.resolve()}")
+
+    rows = [row for family in families for row in rows_by_family[family]]
+    summary_rows = [row for family in families for row in _metric_summary_rows(rows_by_family[family], family)]
+
+    suffix_families = "-".join(families)
+    N_total = sum(int(payloads[family]["metric_id_bestS"].shape[0]) for family in families)
+    suf = f"{suffix_families}_n{a.n}_S{a.readout_shots}_seed0{a.seed0}_N{N_total}"
+    x_suffix = "xIters" if a.xaxis == "iters" else "xBudget"
+
+    if a.metric == "both" and len(families) == 1:
+        family = families[0]
+        payload = payloads[family]
+        fig_path = outdir / f"fig3_readout_best_mode_{suf}_{x_suffix}.{a.fmt}"
+        if a.xaxis == "iters":
+            plot_2panel_iters(
+                fig_path,
+                payload["metric_id_bestS"],
+                payload["metric_fd_bestS"],
+                payload["metric_id_mode"],
+                payload["metric_fd_mode"],
+            )
+        else:
+            plot_2panel_budget(
+                fig_path,
+                payload["x"],
+                payload["metric_id_bestS"],
+                payload["metric_fd_bestS"],
+                payload["metric_id_mode"],
+                payload["metric_fd_mode"],
+            )
+    else:
+        metric = "bestS" if a.metric == "both" else a.metric
+        y_limits = (
+            interesting_readout_ylim(payloads, families, metric, ymax=a.ymax)
+            if a.ymin is None
+            else (float(a.ymin), float(a.ymax))
+        )
+        fig_path = outdir / f"fig3_readout_{metric}_family_grid_{suf}_{x_suffix}.{a.fmt}"
+        plot_family_metric_grid(fig_path, payloads, families, metric=metric, xaxis=a.xaxis, y_limits=y_limits)
+
+        if len(families) > 1:
+            for family in families:
+                family_limits = (
+                    interesting_readout_ylim(payloads, [family], metric, ymax=a.ymax)
+                    if a.ymin is None
+                    else (float(a.ymin), float(a.ymax))
+                )
+                family_fig_path = (
+                    outdir / f"fig3_readout_{metric}_{family}_n{a.n}_S{a.readout_shots}_{x_suffix}.{a.fmt}"
+                )
+                plot_family_metric_grid(
+                    family_fig_path,
+                    payloads,
+                    [family],
+                    metric=metric,
+                    xaxis=a.xaxis,
+                    y_limits=family_limits,
+                )
+
+    csv_path = outdir / "runs3_readout_metrics.csv"
+    write_csv(csv_path, rows)
+
+    table_csv = outdir / "table3_readout_summary.csv"
+    write_csv(table_csv, summary_rows)
+
+    table_tex = outdir / "table3_readout_summary.tex"
+    with open(table_tex, "w", encoding="utf-8") as f:
         f.write("% Auto-generated by exp03_readout_realism_best_mode.py\n")
-        f.write("\\begin{tabular}{lcc}\n")
+        f.write("\\begin{tabular}{l l c c}\n")
         f.write("\\toprule\n")
-        f.write("Metric & VQE+ID & VQE+BD\\\\\n")
+        f.write("Family & Metric & VQE+ID & VQE+BD\\\\\n")
         f.write("\\midrule\n")
-        for met, idm, ids, fdm, fds in summary:
-            f.write(f"{met} & {idm:.3f}$\\pm${ids:.3f} & {fdm:.3f}$\\pm${fds:.3f}\\\\\n")
+        for row in summary_rows:
+            f.write(
+                f"{row['family']} & {row['metric']} & "
+                f"{float(row['ID_mean']):.3f}$\\pm${float(row['ID_stderr']):.3f} & "
+                f"{float(row['BD_mean']):.3f}$\\pm${float(row['BD_stderr']):.3f}\\\\\n"
+            )
         f.write("\\bottomrule\n")
         f.write("\\end{tabular}\n")
 
-    txt_path = outdir / "exp1_readout_summary.txt"
-    with open(txt_path, "w") as f:
+    txt_path = outdir / "SUMMARY.txt"
+    with open(txt_path, "w", encoding="utf-8") as f:
         f.write(
-            f"Experiment 1 (Readout realism) | family={a.family} | n={a.n} | N={N} | S_readout={a.readout_shots} | xaxis={a.xaxis}\n"
+            f"Experiment 3 (Readout realism) | families={','.join(families)} | n={a.n} | "
+            f"N_total={N_total} | S_readout={a.readout_shots} | xaxis={a.xaxis} | metric={a.metric}\n"
         )
-        for met, idm, ids, fdm, fds in summary:
-            f.write(f"{met}:  ID={idm:.4f}+/-{ids:.4f}  |  BD={fdm:.4f}+/-{fds:.4f}\n")
+        f.write(f"budget_evals={a.budget_evals} | graph_seed={a.graph_seed}\n")
+        for row in summary_rows:
+            f.write(
+                f"{row['family']} | {row['metric']}: "
+                f"ID={float(row['ID_mean']):.4f}+/-{float(row['ID_stderr']):.4f} | "
+                f"BD={float(row['BD_mean']):.4f}+/-{float(row['BD_stderr']):.4f}\n"
+            )
         f.write(f"Figure: {fig_path.name}\n")
         f.write(f"Runs: {csv_path.name}\n")
 

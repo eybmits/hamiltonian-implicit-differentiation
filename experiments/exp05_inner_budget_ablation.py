@@ -4,7 +4,7 @@
 exp05_inner_budget_ablation.py
 ==============================
 
-Experiment 0D (Supplement): Inner-budget ablation (iters x restarts)
+Experiment 5: Inner-budget ablation (iters x restarts)
 --------------------------------------------------------------------
 
 Reviewer question:
@@ -30,18 +30,18 @@ Metrics:
   - win_rate = fraction of instances with AUC_gain > 0
 
 Outputs (paper-ready):
-  - fig0D_inner_budget_heatmap.<fmt>
+  - fig5_inner_budget_heatmap.<fmt>
       2 panels: (a) mean dAUC heatmap, (b) win-rate heatmap
-  - runs0D_inner_budget_metrics.csv
+  - runs5_inner_budget_metrics.csv
       per-instance per-cell metrics
-  - table0D_inner_budget_summary.csv / .tex
+  - table5_summary.csv / .tex
       per-cell mean +- s.e.m. summary
-  - exp0D_summary.txt
+  - SUMMARY.txt
       compact text summary (copyable into supplement notes)
 
 Recommended minimal run (not too heavy):
   python exp05_inner_budget_ablation.py \\
-    --out outputs/exp05_inner_budget_ablation/run01 \\
+    --out output/exp05 \\
     --kind periodic --periodic_K 6 \\
     --inner_iters_list 14,28,42 \\
     --restarts_list 1,2,4 \\
@@ -60,6 +60,7 @@ Notes:
 
 import argparse
 import csv
+import json
 import math
 from pathlib import Path
 from typing import Dict, List
@@ -68,12 +69,20 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 
+from paramham.experiment_defaults import (
+    CANONICAL_SETUP,
+    can_run_step,
+    generate_er_family1d_instance,
+    publication_cache_dir,
+    publication_output_dir,
+    restarted_fd_step_cost,
+    restarted_id_step_cost,
+)
 from paramham.families import Family1D
-from paramham.graphs import generate_random_graph
 from paramham.io import parse_int_list
 from paramham.maxcut import build_cut_mask, build_ZZ_edges
 from paramham.maxcut import precompute_z as precompute_z_big_endian
-from paramham.plotting import FULL_W, H_COL, _savefig, set_pub_style
+from paramham.plotting import COL_W, FULL_W, H_COL, _savefig, set_pub_style
 from paramham.seeds import to_uint_seed
 from paramham.simulator import vqe_state
 from paramham.spsa import spsa_minimize
@@ -81,6 +90,57 @@ from paramham.spsa import spsa_minimize
 # ==============================================================================
 # 1) Experiment-specific plotting
 # ==============================================================================
+
+
+def _cache_default_dir(out: Path) -> Path:
+    return publication_cache_dir("exp05")
+
+
+def _cache_meta(args, inner_iters_list: List[int], restarts_list: List[int]) -> dict:
+    return {
+        "seed0": int(args.seed0),
+        "num_seeds": int(args.num_seeds),
+        "n": int(args.n),
+        "p_edge": float(args.p_edge),
+        "graph_seed": int(args.graph_seed),
+        "kind": str(args.kind),
+        "periodic_K": int(args.periodic_K),
+        "lam_min": float(args.lam_min),
+        "lam_max": float(args.lam_max),
+        "lam0": float(args.lam0),
+        "L": int(args.L),
+        "shots": int(args.shots),
+        "inner_iters_list": [int(x) for x in inner_iters_list],
+        "restarts_list": [int(x) for x in restarts_list],
+        "outer_max": int(args.outer_max),
+        "eta0": float(args.eta0),
+        "eta_pow": float(args.eta_pow),
+        "step_clip": float(args.step_clip),
+        "c_frac": float(args.c_frac),
+        "budget_evals": float(args.budget_evals),
+        "Jstar_grid": int(args.Jstar_grid),
+    }
+
+
+def save_exp05_cache(cache_dir: Path, meta: dict, run_rows: List[Dict]) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "cache_meta.json").write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
+    (cache_dir / "run_rows.json").write_text(json.dumps(run_rows, indent=2), encoding="utf-8")
+
+
+def load_exp05_cache(cache_dir: Path, meta_expected: dict):
+    meta_path = cache_dir / "cache_meta.json"
+    rows_path = cache_dir / "run_rows.json"
+    if not meta_path.exists() or not rows_path.exists():
+        return None
+    try:
+        meta_found = json.loads(meta_path.read_text(encoding="utf-8"))
+        run_rows = json.loads(rows_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if meta_found != meta_expected:
+        return None
+    return run_rows
 
 
 def plot_inner_budget_heatmap(
@@ -96,20 +156,34 @@ def plot_inner_budget_heatmap(
     No titles; includes axis labels and colorbars.
     Fix: panel (b) no longer unreadable (auto text color + better colormap).
     """
-    set_pub_style(grid=False)
-    fig, axs = plt.subplots(1, 2, figsize=(FULL_W, H_COL), constrained_layout=True)
+    set_pub_style(grid=False, base_size=8)
+    fig, axs = plt.subplots(1, 2, figsize=(FULL_W, H_COL + 0.10), constrained_layout=True)
 
-    # -----------------------------
-    # Panel (a): dAUC
-    # -----------------------------
-    ax = axs[0]
+    im0 = _draw_auc_gain_heatmap(axs[0], inner_iters_list, restarts_list, auc_gain_mean)
+    cb0 = fig.colorbar(im0, ax=axs[0], fraction=0.046, pad=0.04)
+    cb0.set_label(r"$\Delta \mathrm{AUC}_B$  (ID $-$ BD)")
+
+    im1 = _draw_win_rate_heatmap(axs[1], inner_iters_list, restarts_list, win_rate)
+    cb1 = fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04)
+    cb1.set_label("Win rate (dAUC>0)")
+
+    # panel labels (small, unobtrusive)
+    axs[0].text(0.02, 0.98, "(A)", transform=axs[0].transAxes, ha="left", va="top", fontweight="bold")
+    axs[1].text(0.02, 0.98, "(B)", transform=axs[1].transAxes, ha="left", va="top", fontweight="bold")
+
+    _savefig(fig, path)
+    plt.close(fig)
+
+
+def _draw_auc_gain_heatmap(ax, inner_iters_list: List[int], restarts_list: List[int], auc_gain_mean: np.ndarray):
     vmax = float(np.max(np.abs(auc_gain_mean))) if np.isfinite(auc_gain_mean).any() else 1.0
     vmax = max(vmax, 1e-6)
-    im0 = ax.imshow(
+    cmap = plt.get_cmap("RdBu_r")
+    im = ax.imshow(
         auc_gain_mean,
         origin="lower",
         aspect="auto",
-        cmap="RdBu_r",
+        cmap=cmap,
         vmin=-vmax,
         vmax=+vmax,
         interpolation="nearest",
@@ -121,36 +195,27 @@ def plot_inner_budget_heatmap(
     ax.set_yticks(np.arange(len(restarts_list)))
     ax.set_yticklabels([str(r) for r in restarts_list])
 
-    # annotate means (also choose readable text color)
-    cmap0 = plt.get_cmap("RdBu_r")
-    norm0 = mpl.colors.Normalize(vmin=-vmax, vmax=+vmax)
+    norm = mpl.colors.Normalize(vmin=-vmax, vmax=+vmax)
     for iy in range(len(restarts_list)):
         for ix in range(len(inner_iters_list)):
             val = float(auc_gain_mean[iy, ix])
             if np.isfinite(val):
-                rgba = cmap0(norm0(val))
+                rgba = cmap(norm(val))
                 lum = 0.299 * rgba[0] + 0.587 * rgba[1] + 0.114 * rgba[2]
                 txt_color = "black" if lum > 0.6 else "white"
                 ax.text(ix, iy, f"{val:+.3f}", ha="center", va="center", fontsize=7, color=txt_color)
+    return im
 
-    cb0 = fig.colorbar(im0, ax=ax, fraction=0.046, pad=0.04)
-    cb0.set_label(r"$\Delta \mathrm{AUC}_B$  (ID $-$ BB-FD)")
 
-    # -----------------------------
-    # Panel (b): win rate  (FIXED)
-    # -----------------------------
-    ax = axs[1]
-
-    # pick a readable colormap (choose ONE)
-    cmap_wr = plt.get_cmap("Blues")  # alt: "Greys_r" or "RdBu_r"
-    norm_wr = mpl.colors.Normalize(vmin=0.0, vmax=1.0)
-
-    im1 = ax.imshow(
+def _draw_win_rate_heatmap(ax, inner_iters_list: List[int], restarts_list: List[int], win_rate: np.ndarray):
+    cmap = plt.get_cmap("Blues")
+    norm = mpl.colors.Normalize(vmin=0.0, vmax=1.0)
+    im = ax.imshow(
         win_rate,
         origin="lower",
         aspect="auto",
-        cmap=cmap_wr,
-        norm=norm_wr,
+        cmap=cmap,
+        norm=norm,
         interpolation="nearest",
     )
     ax.set_xlabel("Inner SPSA iterations")
@@ -164,18 +229,29 @@ def plot_inner_budget_heatmap(
         for ix in range(len(inner_iters_list)):
             val = float(win_rate[iy, ix])
             if np.isfinite(val):
-                rgba = cmap_wr(norm_wr(val))
+                rgba = cmap(norm(val))
                 lum = 0.299 * rgba[0] + 0.587 * rgba[1] + 0.114 * rgba[2]
                 txt_color = "black" if lum > 0.6 else "white"
                 ax.text(ix, iy, f"{100 * val:.0f}%", ha="center", va="center", fontsize=7, color=txt_color)
+    return im
 
-    cb1 = fig.colorbar(im1, ax=ax, fraction=0.046, pad=0.04)
-    cb1.set_label("Win rate (dAUC>0)")
 
-    # panel labels (small, unobtrusive)
-    axs[0].text(0.02, 0.98, "(a)", transform=axs[0].transAxes, ha="left", va="top")
-    axs[1].text(0.02, 0.98, "(b)", transform=axs[1].transAxes, ha="left", va="top")
+def plot_auc_gain_heatmap(path: Path, inner_iters_list: List[int], restarts_list: List[int], auc_gain_mean: np.ndarray):
+    set_pub_style(grid=False, base_size=8)
+    fig, ax = plt.subplots(1, 1, figsize=(COL_W, H_COL + 0.10), constrained_layout=True)
+    im = _draw_auc_gain_heatmap(ax, inner_iters_list, restarts_list, auc_gain_mean)
+    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cb.set_label(r"$\Delta \mathrm{AUC}_B$  (ID $-$ BD)")
+    _savefig(fig, path)
+    plt.close(fig)
 
+
+def plot_win_rate_heatmap(path: Path, inner_iters_list: List[int], restarts_list: List[int], win_rate: np.ndarray):
+    set_pub_style(grid=False, base_size=8)
+    fig, ax = plt.subplots(1, 1, figsize=(COL_W, H_COL + 0.10), constrained_layout=True)
+    im = _draw_win_rate_heatmap(ax, inner_iters_list, restarts_list, win_rate)
+    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cb.set_label("Win rate (dAUC>0)")
     _savefig(fig, path)
     plt.close(fig)
 
@@ -366,7 +442,13 @@ def run_outer_budget(
 
     c = float(c_frac * (lam_max - lam_min))
 
+    step_cost = (
+        restarted_id_step_cost(inner_iters, restarts) if mode == "ID" else restarted_fd_step_cost(inner_iters, restarts)
+    )
+
     for t in range(1, int(outer_max) + 1):
+        if not can_run_step(evals_used=evals, budget_evals=budget_evals, step_cost=step_cost):
+            break
         # center value query F(lam) via inner solve
         w = fam.w(lam)
 
@@ -447,10 +529,6 @@ def run_outer_budget(
         step = float(eta * g)
         step = float(np.clip(step, -step_clip, step_clip))
         lam = float(np.clip(lam + step, lam_min, lam_max))
-
-        # budget stop (we allow slight overshoot; AUC truncation will fix)
-        if evals >= float(budget_evals):
-            break
 
     return {
         "evals": np.asarray(events_evals, dtype=float),
@@ -540,19 +618,23 @@ def write_table_tex(path: Path, rows: List[Dict], caption: str, label: str):
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--out", type=str, default="outputs/exp05_inner_budget_ablation")
+    p.add_argument("--out", type=str, default=None)
+    p.add_argument("--cache_dir", type=str, default=None)
     p.add_argument("--fmt", type=str, default="pdf", choices=["pdf", "png", "svg"])
+    p.add_argument("--recompute", action="store_true")
+    p.add_argument("--render_only", action="store_true")
 
     # instance / family
     p.add_argument("--seed0", type=int, default=7)
     p.add_argument("--num_seeds", type=int, default=7)
-    p.add_argument("--n", type=int, default=12)
-    p.add_argument("--p_edge", type=float, default=0.45)
-    p.add_argument("--kind", type=str, default="periodic", choices=["linear", "quadratic", "periodic"])
-    p.add_argument("--periodic_K", type=int, default=6)
-    p.add_argument("--lam_min", type=float, default=-5.0)
-    p.add_argument("--lam_max", type=float, default=5.0)
-    p.add_argument("--lam0", type=float, default=0.8)
+    p.add_argument("--n", type=int, default=CANONICAL_SETUP.n)
+    p.add_argument("--p_edge", type=float, default=CANONICAL_SETUP.p_edge)
+    p.add_argument("--graph_seed", type=int, default=CANONICAL_SETUP.graph_seed)
+    p.add_argument("--kind", type=str, default=CANONICAL_SETUP.family, choices=["linear", "quadratic", "periodic"])
+    p.add_argument("--periodic_K", type=int, default=CANONICAL_SETUP.periodic_K)
+    p.add_argument("--lam_min", type=float, default=CANONICAL_SETUP.lam_min)
+    p.add_argument("--lam_max", type=float, default=CANONICAL_SETUP.lam_max)
+    p.add_argument("--lam0", type=float, default=CANONICAL_SETUP.lam0)
 
     # VQE / inner
     p.add_argument("--L", type=int, default=2)
@@ -570,7 +652,7 @@ def parse_args():
     p.add_argument("--c_frac", type=float, default=0.05)
 
     # budget + J* grid
-    p.add_argument("--budget_evals", type=float, default=5100.0)
+    p.add_argument("--budget_evals", type=float, default=CANONICAL_SETUP.budget_evals)
     p.add_argument("--Jstar_grid", type=int, default=401)
 
     return p.parse_args()
@@ -578,7 +660,7 @@ def parse_args():
 
 def main():
     a = parse_args()
-    out = Path(a.out)
+    out = Path(a.out) if a.out is not None else publication_output_dir("exp05")
     out.mkdir(parents=True, exist_ok=True)
 
     inner_iters_list = parse_int_list(a.inner_iters_list)
@@ -586,141 +668,149 @@ def main():
     if not inner_iters_list or not restarts_list:
         raise ValueError("inner_iters_list and restarts_list must be non-empty.")
 
+    cache_dir = Path(a.cache_dir) if a.cache_dir is not None else _cache_default_dir(out)
+    meta = _cache_meta(a, inner_iters_list, restarts_list)
+
     # collect per-run rows
-    run_rows = []
+    run_rows = None if a.recompute else load_exp05_cache(cache_dir, meta)
+    if run_rows is not None:
+        print(f"[cache] Loaded ablation rows from {cache_dir.resolve()}")
+    elif a.render_only:
+        raise SystemExit(f"No matching cache found in {cache_dir}")
+    else:
+        run_rows = []
+        Rn = len(restarts_list)
+        In = len(inner_iters_list)
+        Sn = int(a.num_seeds)
+        auc_gain = np.full((Rn, In, Sn), np.nan, dtype=float)
+        win = np.zeros((Rn, In, Sn), dtype=float)
 
-    # for heatmaps: store per-cell per-seed values, then aggregate
-    # shape: (R, I, S)
-    Rn = len(restarts_list)
-    In = len(inner_iters_list)
-    Sn = int(a.num_seeds)
+        for s_idx in range(Sn):
+            seed = int(a.seed0 + s_idx)
+            edges, fam = generate_er_family1d_instance(
+                a.n,
+                a.p_edge,
+                a.kind,
+                (a.lam_min, a.lam_max),
+                graph_seed=a.graph_seed,
+                periodic_K=a.periodic_K,
+                instance_id=seed,
+                safety_bounds=False,
+            )
+            if not edges or fam is None:
+                raise RuntimeError("Graph has 0 edges; increase p_edge or change graph_seed.")
 
-    auc_gain = np.full((Rn, In, Sn), np.nan, dtype=float)
-    win = np.zeros((Rn, In, Sn), dtype=float)
+            Z = precompute_z_big_endian(a.n)
+            cut_mask = build_cut_mask(edges, Z)
+            ZZ_edges = build_ZZ_edges(edges, Z)
+            Jstar = classical_Jstar_max(fam, cut_mask, a.Jstar_grid)
+            if Jstar <= 0 or not np.isfinite(Jstar):
+                Jstar = 1.0
 
-    for s_idx in range(Sn):
-        seed = int(a.seed0 + s_idx)
-        rng = np.random.default_rng(to_uint_seed(seed))
+            for iy, restarts in enumerate(restarts_list):
+                for ix, inner_iters in enumerate(inner_iters_list):
+                    hist_id = run_outer_budget(
+                        mode="ID",
+                        n=a.n,
+                        edges=edges,
+                        fam=fam,
+                        ZZ_edges=ZZ_edges,
+                        cut_mask=cut_mask,
+                        lam0=a.lam0,
+                        outer_max=a.outer_max,
+                        inner_iters=inner_iters,
+                        restarts=restarts,
+                        L=a.L,
+                        seed=seed,
+                        eta0=a.eta0,
+                        eta_pow=a.eta_pow,
+                        step_clip=a.step_clip,
+                        c_frac=a.c_frac,
+                        shots=a.shots,
+                        budget_evals=a.budget_evals,
+                        Jstar=Jstar,
+                    )
 
-        # instance
-        edges = generate_random_graph(a.n, a.p_edge, rng)
-        if not edges:
-            # resample with a deterministic bump to avoid empty graphs
-            rng2 = np.random.default_rng(to_uint_seed(seed + 12345))
-            edges = generate_random_graph(a.n, a.p_edge, rng2)
-        if not edges:
-            raise RuntimeError("Graph has 0 edges; increase p_edge or change seed0.")
+                    hist_fd = run_outer_budget(
+                        mode="FD_VALUE",
+                        n=a.n,
+                        edges=edges,
+                        fam=fam,
+                        ZZ_edges=ZZ_edges,
+                        cut_mask=cut_mask,
+                        lam0=a.lam0,
+                        outer_max=a.outer_max,
+                        inner_iters=inner_iters,
+                        restarts=restarts,
+                        L=a.L,
+                        seed=seed,
+                        eta0=a.eta0,
+                        eta_pow=a.eta_pow,
+                        step_clip=a.step_clip,
+                        c_frac=a.c_frac,
+                        shots=a.shots,
+                        budget_evals=a.budget_evals,
+                        Jstar=Jstar,
+                    )
 
-        Z = precompute_z_big_endian(a.n)
-        cut_mask = build_cut_mask(edges, Z)
-        ZZ_edges = build_ZZ_edges(edges, Z)
+                    auc_id = auc_step(hist_id["evals"], hist_id["best_norm"], a.budget_evals)
+                    auc_fd = auc_step(hist_fd["evals"], hist_fd["best_norm"], a.budget_evals)
+                    gain = float(auc_id - auc_fd)
 
-        fam = Family1D(
-            m=len(edges),
-            kind=a.kind,
-            lam_bounds=(a.lam_min, a.lam_max),
-            rng=rng,
-            periodic_K=a.periodic_K,
-            safety_bounds=False,
-        )
+                    auc_gain[iy, ix, s_idx] = gain
+                    win[iy, ix, s_idx] = 1.0 if gain > 0 else 0.0
 
-        # diagnostic normalization J*
-        Jstar = classical_Jstar_max(fam, cut_mask, a.Jstar_grid)
-        if Jstar <= 0 or not np.isfinite(Jstar):
-            Jstar = 1.0
+                    run_rows.append(
+                        {
+                            "seed": seed,
+                            "kind": a.kind,
+                            "periodic_K": a.periodic_K,
+                            "graph_seed": a.graph_seed,
+                            "n": a.n,
+                            "p_edge": a.p_edge,
+                            "shots": a.shots,
+                            "budget_evals": a.budget_evals,
+                            "inner_iters": inner_iters,
+                            "restarts": restarts,
+                            "Jstar": Jstar,
+                            "auc_id": auc_id,
+                            "auc_fd": auc_fd,
+                            "auc_gain": gain,
+                            "evals_end_id": float(hist_id["evals_end"][0]),
+                            "evals_end_fd": float(hist_fd["evals_end"][0]),
+                        }
+                    )
 
-        for iy, restarts in enumerate(restarts_list):
-            for ix, inner_iters in enumerate(inner_iters_list):
-                # ID run
-                hist_id = run_outer_budget(
-                    mode="ID",
-                    n=a.n,
-                    edges=edges,
-                    fam=fam,
-                    ZZ_edges=ZZ_edges,
-                    cut_mask=cut_mask,
-                    lam0=a.lam0,
-                    outer_max=a.outer_max,
-                    inner_iters=inner_iters,
-                    restarts=restarts,
-                    L=a.L,
-                    seed=seed,
-                    eta0=a.eta0,
-                    eta_pow=a.eta_pow,
-                    step_clip=a.step_clip,
-                    c_frac=a.c_frac,
-                    shots=a.shots,
-                    budget_evals=a.budget_evals,
-                    Jstar=Jstar,
-                )
+                    print(
+                        f"[seed={seed:3d}] iters={inner_iters:3d} restarts={restarts:2d} "
+                        f"AUC_ID={auc_id:.4f} AUC_FD={auc_fd:.4f} gain={gain:+.4f}"
+                    )
 
-                # FD run
-                hist_fd = run_outer_budget(
-                    mode="FD_VALUE",
-                    n=a.n,
-                    edges=edges,
-                    fam=fam,
-                    ZZ_edges=ZZ_edges,
-                    cut_mask=cut_mask,
-                    lam0=a.lam0,
-                    outer_max=a.outer_max,
-                    inner_iters=inner_iters,
-                    restarts=restarts,
-                    L=a.L,
-                    seed=seed,
-                    eta0=a.eta0,
-                    eta_pow=a.eta_pow,
-                    step_clip=a.step_clip,
-                    c_frac=a.c_frac,
-                    shots=a.shots,
-                    budget_evals=a.budget_evals,
-                    Jstar=Jstar,
-                )
-
-                auc_id = auc_step(hist_id["evals"], hist_id["best_norm"], a.budget_evals)
-                auc_fd = auc_step(hist_fd["evals"], hist_fd["best_norm"], a.budget_evals)
-                gain = float(auc_id - auc_fd)
-
-                auc_gain[iy, ix, s_idx] = gain
-                win[iy, ix, s_idx] = 1.0 if gain > 0 else 0.0
-
-                run_rows.append(
-                    {
-                        "seed": seed,
-                        "kind": a.kind,
-                        "periodic_K": a.periodic_K,
-                        "n": a.n,
-                        "p_edge": a.p_edge,
-                        "shots": a.shots,
-                        "budget_evals": a.budget_evals,
-                        "inner_iters": inner_iters,
-                        "restarts": restarts,
-                        "Jstar": Jstar,
-                        "auc_id": auc_id,
-                        "auc_fd": auc_fd,
-                        "auc_gain": gain,
-                        "evals_end_id": float(hist_id["evals_end"][0]),
-                        "evals_end_fd": float(hist_fd["evals_end"][0]),
-                    }
-                )
-
-                print(
-                    f"[seed={seed:3d}] iters={inner_iters:3d} restarts={restarts:2d} "
-                    f"AUC_ID={auc_id:.4f} AUC_FD={auc_fd:.4f} gain={gain:+.4f}"
-                )
+        save_exp05_cache(cache_dir, meta, run_rows)
+        print(f"[cache] Saved ablation rows to {cache_dir.resolve()}")
 
     # save per-run CSV
-    runs_csv = out / "runs0D_inner_budget_metrics.csv"
+    runs_csv = out / "runs5_inner_budget_metrics.csv"
     write_csv(runs_csv, run_rows, fieldnames=list(run_rows[0].keys()) if run_rows else [])
 
     # aggregate per-cell
+    Rn = len(restarts_list)
+    In = len(inner_iters_list)
+    Sn = int(a.num_seeds)
     summary_rows = []
     auc_gain_mean = np.full((Rn, In), np.nan, dtype=float)
     win_rate = np.full((Rn, In), np.nan, dtype=float)
 
     for iy, restarts in enumerate(restarts_list):
         for ix, inner_iters in enumerate(inner_iters_list):
-            vals = auc_gain[iy, ix, :]
+            vals = np.array(
+                [
+                    r["auc_gain"]
+                    for r in run_rows
+                    if int(r["restarts"]) == int(restarts) and int(r["inner_iters"]) == int(inner_iters)
+                ],
+                dtype=float,
+            )
             vals = vals[np.isfinite(vals)]
             N = int(vals.size)
             if N == 0:
@@ -730,7 +820,7 @@ def main():
             else:
                 mean = float(np.mean(vals))
                 sem = float(np.std(vals, ddof=1) / math.sqrt(N)) if N > 1 else float("nan")
-                wr = float(np.mean(win[iy, ix, :]))
+                wr = float(np.mean(vals > 0.0))
 
             auc_gain_mean[iy, ix] = mean
             win_rate[iy, ix] = wr
@@ -747,26 +837,26 @@ def main():
             )
 
     # save summary table
-    summary_csv = out / "table0D_inner_budget_summary.csv"
+    summary_csv = out / "table5_summary.csv"
     write_csv(
         summary_csv,
         summary_rows,
         fieldnames=["restarts", "inner_iters", "N", "auc_gain_mean", "auc_gain_sem", "win_rate"],
     )
-    summary_tex = out / "table0D_inner_budget_summary.tex"
+    summary_tex = out / "table5_summary.tex"
     write_table_tex(
         summary_tex,
         summary_rows,
         caption=(
-            "0D inner-budget ablation (periodic family by default). "
+            "Experiment 5 inner-budget ablation (periodic family by default). "
             "Each cell reports mean+-s.e.m. of dAUC_B = AUC_ID - AUC_BB-FD "
             "at fixed evaluation budget B, over paired random instances."
         ),
-        label="tab:0D_inner_budget",
+        label="tab:exp5_inner_budget",
     )
 
     # figure
-    fig_path = out / f"fig0D_inner_budget_heatmap.{a.fmt}"
+    fig_path = out / f"fig5_inner_budget_heatmap.{a.fmt}"
     plot_inner_budget_heatmap(
         fig_path,
         inner_iters_list=inner_iters_list,
@@ -774,18 +864,32 @@ def main():
         auc_gain_mean=auc_gain_mean,
         win_rate=win_rate,
     )
+    plot_auc_gain_heatmap(
+        out / f"fig5_inner_budget_auc_heatmap.{a.fmt}",
+        inner_iters_list=inner_iters_list,
+        restarts_list=restarts_list,
+        auc_gain_mean=auc_gain_mean,
+    )
+    plot_win_rate_heatmap(
+        out / f"fig5_inner_budget_winrate_heatmap.{a.fmt}",
+        inner_iters_list=inner_iters_list,
+        restarts_list=restarts_list,
+        win_rate=win_rate,
+    )
 
     # compact text summary
-    txt = out / "exp0D_summary.txt"
+    txt = out / "SUMMARY.txt"
     with txt.open("w", encoding="utf-8") as f:
-        f.write("Experiment 0D -- Inner-budget ablation\n")
-        f.write(f"kind={a.kind} | periodic_K={a.periodic_K} | n={a.n} | p_edge={a.p_edge}\n")
+        f.write("Experiment 5 -- Inner-budget ablation\n")
+        f.write(
+            f"kind={a.kind} | periodic_K={a.periodic_K} | n={a.n} | p_edge={a.p_edge} | graph_seed={a.graph_seed}\n"
+        )
         f.write(f"shots={a.shots} | budget_evals={a.budget_evals} | seeds={a.num_seeds}\n")
         f.write(f"inner_iters_list={inner_iters_list}\n")
         f.write(f"restarts_list={restarts_list}\n\n")
         # global summary
-        all_g = auc_gain.reshape(-1, Sn)
-        flat = all_g[np.isfinite(all_g)]
+        flat = np.array([r["auc_gain"] for r in run_rows], dtype=float)
+        flat = flat[np.isfinite(flat)]
         if flat.size:
             f.write(f"Overall mean dAUC over all cells: {float(np.mean(flat)):+.4f}\n")
             f.write(f"Overall win rate over all cells: {float(np.mean(flat > 0)) * 100:.1f}%\n")
