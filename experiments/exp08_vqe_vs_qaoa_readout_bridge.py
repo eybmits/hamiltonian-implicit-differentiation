@@ -86,6 +86,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
+from plot_style import FIG_H, FIG_W, apply_thesis_axes_style, dual_panel_size, grid_size, save_figure, use_thesis_style
 
 from paramham.experiment_defaults import (
     CANONICAL_SETUP,
@@ -100,7 +101,7 @@ from paramham.families import Family1D
 from paramham.io import parse_int_list
 from paramham.maxcut import build_cut_mask, classical_Jstar
 from paramham.maxcut import precompute_z as precompute_z_big_endian
-from paramham.plotting import COL_W, COLORS, FULL_W, H_COL, _savefig, add_figure_legend, add_panel_legend, set_pub_style
+from paramham.plotting import COLORS, add_figure_legend
 from paramham.qaoa import qaoa_energy, qaoa_state
 
 # ---------------------------------------------------------------------------
@@ -119,11 +120,50 @@ from paramham.spsa import spsa_minimize
 
 
 def fig_size() -> Tuple[float, float]:
-    return (COL_W, H_COL)
+    return (FIG_W, FIG_H)
+
+
+def _set_exp08_plot_style(grid: bool = False):
+    use_thesis_style()
+    plt.rcParams["axes.grid"] = bool(grid)
+
+
+def _single_panel_with_footer():
+    """Match the Exp2 mechanism for a single plot plus a dedicated legend row."""
+
+    fig = plt.figure(figsize=dual_panel_size(), constrained_layout=True)
+    gs = fig.add_gridspec(2, 1, height_ratios=[1.0, 0.14])
+    ax = fig.add_subplot(gs[0, 0])
+    legend_ax = fig.add_subplot(gs[1, 0])
+    legend_ax.axis("off")
+    return fig, ax, legend_ax
+
+
+def _footer_legend(legend_ax: plt.Axes, handles, labels, *, ncol: int = 2):
+    return legend_ax.legend(
+        handles,
+        labels,
+        loc="center",
+        ncol=ncol,
+        frameon=False,
+        handlelength=1.8,
+        handletextpad=0.6,
+        columnspacing=1.2,
+    )
 
 
 def _panel_label(ax: plt.Axes, label: str):
-    ax.text(0.00, 1.02, label, transform=ax.transAxes, va="bottom", ha="left", fontsize=9, fontweight="bold")
+    ax.text(0.00, 1.01, label, transform=ax.transAxes, va="bottom", ha="left", fontsize=8, fontweight="bold")
+
+
+def _compact_collage_axis(ax: plt.Axes):
+    """Slightly tighten typography for square sixpack panels."""
+
+    ax.xaxis.label.set_size(9)
+    ax.yaxis.label.set_size(9)
+    ax.xaxis.labelpad = 2.0
+    ax.yaxis.labelpad = 2.0
+    ax.tick_params(axis="both", which="major", labelsize=8)
 
 
 def step_sample(evals: np.ndarray, y_step: np.ndarray, grid: np.ndarray) -> np.ndarray:
@@ -612,8 +652,8 @@ def run_outer_qaoa_full(
 
 
 CURVE_STYLES = {
-    "VQE": {"color": COLORS["VQE"], "ls": "-", "label": "VQE + ID", "alpha": 0.14, "marker": "o"},
-    "QAOA": {"color": COLORS["QAOA"], "ls": "--", "label": "QAOA + FD", "alpha": 0.10, "marker": "s"},
+    "VQE": {"color": COLORS["VQE"], "ls": "-", "label": "VQE", "alpha": 0.14, "marker": "o"},
+    "QAOA": {"color": COLORS["QAOA"], "ls": "--", "label": "QAOA", "alpha": 0.10, "marker": "s"},
 }
 
 
@@ -691,6 +731,7 @@ def _draw_curve_panel(
     ax.set_ylabel(ylabel)
     ax.set_xlabel("Energy evaluations" if show_xlabel else "")
     ax.set_ylim(*(ylim if ylim is not None else _interesting_curve_ylim(stats)))
+    apply_thesis_axes_style(ax, grid=False)
     return handles, labels
 
 
@@ -749,6 +790,7 @@ def _draw_uplift_panel(
     ax.set_ylim(lo - pad, hi + pad)
     ax.set_xlabel("Energy evaluations")
     ax.set_ylabel(r"Readout uplift $(\mathrm{best\!-\!of\!-\!}S - J)/J^*$")
+    apply_thesis_axes_style(ax, grid=False)
     return handles, labels
 
 
@@ -811,6 +853,7 @@ def _draw_n_sweep_panel(
     ax.set_xlabel(r"System size $n$")
     ax.set_ylabel(ylabel)
     ax.set_ylim(max(0.0, lo - pad), min(1.02, hi + pad))
+    apply_thesis_axes_style(ax, grid=False)
     return handles, labels
 
 
@@ -822,13 +865,11 @@ def plot_metric_vs_evals(
     ylabel: str,
     ylim: Tuple[float, float] | None = None,
 ):
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
-    _draw_curve_panel(ax, curves, budget=budget, ylabel=ylabel, ylim=ylim, show_xlabel=True)
-    leg = add_panel_legend(ax, placement="below", ncol=2)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-    _savefig(fig, path)
+    _set_exp08_plot_style(grid=False)
+    fig, ax, legend_ax = _single_panel_with_footer()
+    handles, labels = _draw_curve_panel(ax, curves, budget=budget, ylabel=ylabel, ylim=ylim, show_xlabel=True)
+    _footer_legend(legend_ax, handles, labels, ncol=2)
+    save_figure(fig, path)
 
 
 def plot_uplift_vs_evals(
@@ -838,13 +879,11 @@ def plot_uplift_vs_evals(
     *,
     budget: float,
 ):
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
-    _draw_uplift_panel(ax, curves_expect, curves_readout, budget=budget)
-    leg = add_panel_legend(ax, placement="below", ncol=2)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-    _savefig(fig, path)
+    _set_exp08_plot_style(grid=False)
+    fig, ax, legend_ax = _single_panel_with_footer()
+    handles, labels = _draw_uplift_panel(ax, curves_expect, curves_readout, budget=budget)
+    _footer_legend(legend_ax, handles, labels, ncol=2)
+    save_figure(fig, path)
 
 
 def plot_expect_and_readout_vs_evals(
@@ -857,8 +896,8 @@ def plot_expect_and_readout_vs_evals(
 ):
     """Legacy combined budget figure kept for compatibility."""
     del readout_shots, annotate
-    set_pub_style(grid=False)
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(FULL_W, H_COL), constrained_layout=True)
+    _set_exp08_plot_style(grid=False)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=dual_panel_size(), constrained_layout=True)
     _draw_curve_panel(ax1, curves_expect, budget=budget, ylabel=r"Best-so-far expectation $J/J^*$", show_xlabel=True)
     handles, labels = _draw_curve_panel(
         ax2, curves_readout, budget=budget, ylabel=r"Best sampled cut $J/J^*$", show_xlabel=True
@@ -866,7 +905,7 @@ def plot_expect_and_readout_vs_evals(
     leg = add_figure_legend(fig, handles, labels, ncol=2)
     leg.get_frame().set_linewidth(0.0)
     leg.get_frame().set_facecolor("white")
-    _savefig(fig, path)
+    save_figure(fig, path)
 
 
 def plot_tailprob_vs_evals(
@@ -884,8 +923,8 @@ def plot_tailprob_vs_evals(
 
 def plot_evals_vs_outer(path: Path, evals_mean: Dict[str, np.ndarray]):
     """Optional: mean cumulative energy evals vs outer iteration."""
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
+    _set_exp08_plot_style(grid=False)
+    fig, ax, legend_ax = _single_panel_with_footer()
 
     for name in ("VQE", "QAOA"):
         if name not in evals_mean:
@@ -897,10 +936,10 @@ def plot_evals_vs_outer(path: Path, evals_mean: Dict[str, np.ndarray]):
 
     ax.set_xlabel(r"Outer iteration $t$")
     ax.set_ylabel("Cumulative energy evaluations")
-    leg = add_panel_legend(ax, placement="below", ncol=2)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-    _savefig(fig, path)
+    apply_thesis_axes_style(ax, grid=False)
+    handles, labels = ax.get_legend_handles_labels()
+    _footer_legend(legend_ax, handles, labels, ncol=2)
+    save_figure(fig, path)
 
 
 def _draw_pair_scatter_panel(
@@ -963,6 +1002,7 @@ def _draw_pair_scatter_panel(
     ax.set_ylim(lo, hi)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
+    apply_thesis_axes_style(ax, grid=False)
 
     if x.size:
         win = 100.0 * float(np.mean(pos))
@@ -990,8 +1030,8 @@ def plot_pair_scatter(
     positive_label: str = "VQE > QAOA",
     negative_label: str = "QAOA >= VQE",
 ):
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
+    _set_exp08_plot_style(grid=False)
+    fig, ax, legend_ax = _single_panel_with_footer()
     handles, labels = _draw_pair_scatter_panel(
         ax,
         x,
@@ -1001,10 +1041,8 @@ def plot_pair_scatter(
         positive_label=positive_label,
         negative_label=negative_label,
     )
-    leg = add_panel_legend(ax, placement="below", ncol=2, handles=handles, labels=labels)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-    _savefig(fig, path)
+    _footer_legend(legend_ax, handles, labels, ncol=2)
+    save_figure(fig, path)
 
 
 def plot_tradeoff_scatter(
@@ -1072,6 +1110,7 @@ def _draw_shots_panel(
     ax.get_xaxis().set_major_formatter(mpl.ticker.ScalarFormatter())
     ax.set_xlabel(r"Readout shots per outer step $S$")
     ax.set_ylabel(r"Best-of-$S$ at budget $B$  ($J/J^*$)")
+    apply_thesis_axes_style(ax, grid=False)
     return handles, labels
 
 
@@ -1084,23 +1123,19 @@ def plot_readout_shots_sweep(
     annotate: bool = False,
 ):
     del budget, annotate
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
-    _draw_shots_panel(ax, shots, stats_vqe, stats_qaoa)
-    leg = add_panel_legend(ax, placement="below", ncol=2)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-    _savefig(fig, path)
+    _set_exp08_plot_style(grid=False)
+    fig, ax, legend_ax = _single_panel_with_footer()
+    handles, labels = _draw_shots_panel(ax, shots, stats_vqe, stats_qaoa)
+    _footer_legend(legend_ax, handles, labels, ncol=2)
+    save_figure(fig, path)
 
 
 def plot_n_sweep_budget(path: Path, n_sweep_stats: List[Dict[str, float]], *, readout_shots: int):
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
-    _draw_n_sweep_panel(ax, n_sweep_stats, readout_shots=readout_shots)
-    leg = add_panel_legend(ax, placement="below", ncol=2)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-    _savefig(fig, path)
+    _set_exp08_plot_style(grid=False)
+    fig, ax, legend_ax = _single_panel_with_footer()
+    handles, labels = _draw_n_sweep_panel(ax, n_sweep_stats, readout_shots=readout_shots)
+    _footer_legend(legend_ax, handles, labels, ncol=2)
+    save_figure(fig, path)
 
 
 def plot_sixpack_collage(
@@ -1119,54 +1154,90 @@ def plot_sixpack_collage(
     readout_x: np.ndarray,
     readout_y: np.ndarray,
 ):
-    set_pub_style(grid=False, base_size=8)
-    fig, axes = plt.subplots(2, 3, figsize=(FULL_W, 2 * H_COL + 1.0), constrained_layout=False)
-    axes = np.asarray(axes)
-    fig.subplots_adjust(left=0.08, right=0.985, bottom=0.15, top=0.985, wspace=0.36, hspace=0.42)
+    _set_exp08_plot_style(grid=False)
+    fig = plt.figure(figsize=grid_size(2), constrained_layout=True)
+    gs = fig.add_gridspec(3, 3, height_ratios=[1.0, 1.0, 0.17])
+    axes = np.empty((2, 3), dtype=object)
+    for r in range(2):
+        for c in range(3):
+            axes[r, c] = fig.add_subplot(gs[r, c])
+            axes[r, c].set_box_aspect(1.0)
 
     _draw_curve_panel(
         axes[0, 0], curves_expect, budget=budget, ylabel=r"Best-so-far expectation $J/J^*$", show_xlabel=True
     )
+    axes[0, 0].set_xlabel("Energy evals")
+    axes[0, 0].set_ylabel("Expectation")
+    _compact_collage_axis(axes[0, 0])
     _panel_label(axes[0, 0], "(A)")
 
     _draw_curve_panel(axes[0, 1], curves_readout, budget=budget, ylabel=r"Best sampled cut $J/J^*$", show_xlabel=True)
+    axes[0, 1].set_xlabel("Energy evals")
+    axes[0, 1].set_ylabel("Best cut")
+    _compact_collage_axis(axes[0, 1])
     _panel_label(axes[0, 1], "(B)")
 
     _draw_n_sweep_panel(axes[0, 2], n_sweep_stats, readout_shots=readout_shots)
+    axes[0, 2].set_xlabel(r"Size $n$")
+    axes[0, 2].set_ylabel(r"Best @ $B$")
+    _compact_collage_axis(axes[0, 2])
     _panel_label(axes[0, 2], "(C)")
 
     _draw_shots_panel(axes[1, 0], shots_sorted, stats_vqe, stats_qaoa)
+    axes[1, 0].set_xlabel(r"Shots $S$")
+    axes[1, 0].set_ylabel(r"Best-of-$S$")
+    _compact_collage_axis(axes[1, 0])
     _panel_label(axes[1, 0], "(D)")
 
     _draw_pair_scatter_panel(
         axes[1, 1],
         objective_x,
         objective_y,
-        xlabel=r"QAOA + FD at budget $B$  ($J/J^*$)",
-        ylabel=r"VQE + ID at budget $B$  ($J/J^*$)",
+        xlabel=r"QAOA @ $B$",
+        ylabel=r"VQE @ $B$",
     )
+    _compact_collage_axis(axes[1, 1])
+    for text in axes[1, 1].texts:
+        if "better in" in text.get_text():
+            text.set_text(text.get_text().replace("better in ", ""))
+            text.set_fontsize(5)
     _panel_label(axes[1, 1], "(E)")
 
     _draw_pair_scatter_panel(
         axes[1, 2],
         readout_x,
         readout_y,
-        xlabel=r"QAOA + FD best-of-$S$ at $B$  ($J/J^*$)",
-        ylabel=r"VQE + ID best-of-$S$ at $B$  ($J/J^*$)",
+        xlabel=r"QAOA readout",
+        ylabel=r"VQE readout",
     )
+    _compact_collage_axis(axes[1, 2])
+    for text in axes[1, 2].texts:
+        if "better in" in text.get_text():
+            text.set_text(text.get_text().replace("better in ", ""))
+            text.set_fontsize(5)
     _panel_label(axes[1, 2], "(F)")
 
     handles = [
-        Line2D([], [], color=COLORS["VQE"], lw=1.9, ls="-", label="VQE + ID"),
-        Line2D([], [], color=COLORS["QAOA"], lw=1.9, ls="--", label="QAOA + FD"),
+        Line2D([], [], color=COLORS["VQE"], lw=1.9, ls="-", label="VQE"),
+        Line2D([], [], color=COLORS["QAOA"], lw=1.9, ls="--", label="QAOA"),
         Line2D([], [], color=COLORS["ID"], marker="o", lw=0, markersize=5, label="VQE > QAOA"),
         Line2D([], [], color=COLORS["FD"], marker="o", lw=0, markersize=5, label="QAOA >= VQE"),
     ]
-    labels = [h.get_label() for h in handles]
-    leg = add_figure_legend(fig, handles, labels, ncol=4)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-    _savefig(fig, path)
+    legend_ax = fig.add_subplot(gs[2, :])
+    legend_ax.axis("off")
+    legend_ax.legend(
+        handles=handles,
+        loc="center",
+        ncol=4,
+        frameon=False,
+        fancybox=False,
+        borderpad=0.35,
+        columnspacing=1.2,
+        handlelength=1.8,
+        handletextpad=0.6,
+        fontsize=10,
+    )
+    save_figure(fig, path)
 
 
 # ==============================================================================
@@ -1806,15 +1877,15 @@ def main():
             out / f"fig8_objective_pair_scatter.{a.fmt}",
             objective_x,
             objective_y,
-            xlabel=r"QAOA + FD at budget $B$  ($J/J^*$)",
-            ylabel=r"VQE + ID at budget $B$  ($J/J^*$)",
+            xlabel=r"QAOA at budget $B$  ($J/J^*$)",
+            ylabel=r"VQE at budget $B$  ($J/J^*$)",
         )
         plot_pair_scatter(
             out / f"fig8_readout_pair_scatter.{a.fmt}",
             readout_x,
             readout_y,
-            xlabel=rf"QAOA + FD best-of-{int(a.readout_shots)} at $B$  ($J/J^*$)",
-            ylabel=rf"VQE + ID best-of-{int(a.readout_shots)} at $B$  ($J/J^*$)",
+            xlabel=rf"QAOA best-of-{int(a.readout_shots)} at $B$  ($J/J^*$)",
+            ylabel=rf"VQE best-of-{int(a.readout_shots)} at $B$  ($J/J^*$)",
         )
 
     if a.collage_plot:

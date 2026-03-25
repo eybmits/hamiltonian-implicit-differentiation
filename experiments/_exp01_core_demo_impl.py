@@ -16,6 +16,9 @@ from typing import Tuple
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
+from matplotlib.patches import Patch
+from plot_style import FIG_H, FIG_W, apply_thesis_axes_style, dual_panel_size, grid_size, save_figure, use_thesis_style
 
 from paramham.experiment_defaults import (
     CANONICAL_SETUP,
@@ -28,15 +31,9 @@ from paramham.experiment_defaults import (
 from paramham.maxcut import build_cut_mask
 from paramham.maxcut import precompute_z as precompute_z_big_endian
 from paramham.plotting import (
-    COL_W,
     COLORS,
-    FULL_W,
-    H_COL,
     METHOD_CMAPS,
-    _savefig,
-    add_figure_legend,
     add_panel_legend,
-    set_pub_style,
 )
 from paramham.seeds import to_uint_seed
 from paramham.simulator import vqe_state
@@ -44,7 +41,12 @@ from paramham.spsa import spsa_minimize
 
 
 def fig_size() -> Tuple[float, float]:
-    return (COL_W, H_COL)
+    return (FIG_W, FIG_H)
+
+
+def _set_exp01_plot_style(grid: bool = False):
+    use_thesis_style()
+    plt.rcParams["axes.grid"] = bool(grid)
 
 
 def _truncate_step_to_budget(evals: np.ndarray, y: np.ndarray, budget: float):
@@ -62,15 +64,69 @@ def _truncate_step_to_budget(evals: np.ndarray, y: np.ndarray, budget: float):
     return ev, yy
 
 
-# ==============================================================================
-# THE 5 ADJUSTED PLOTTING FUNCTIONS
-# ==============================================================================
+def _add_family_badge(ax, family_label: str | None):
+    if family_label is None:
+        return
+    ax.text(
+        0.03,
+        0.93,
+        family_label,
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=10,
+        color=COLORS["MUTED"],
+        bbox=dict(boxstyle="round,pad=0.24", facecolor="white", edgecolor="#D9D5CB", alpha=0.98),
+    )
 
 
-def plot_envelope_improved(path: Path, lam_grid, J_cl_star, hist_id, hist_fd):
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
+def _panel_label(ax, label: str):
+    ax.text(0.00, 1.02, label, transform=ax.transAxes, va="bottom", ha="left", fontsize=9, fontweight="bold")
 
+
+def _blend_rgb(color_lo, color_hi, weight: float):
+    lo = np.asarray(to_rgb(color_lo), dtype=float)
+    hi = np.asarray(to_rgb(color_hi), dtype=float)
+    w = float(np.clip(weight, 0.0, 1.0))
+    return tuple((1.0 - w) * lo + w * hi)
+
+
+def _spectrum_context_style(dist: float, mode: str):
+    strength = float(math.exp(-1.45 * max(dist, 0.0)))
+    if mode == "redfade":
+        color = _blend_rgb("#FCF1F2", "#C97A86", strength)
+        alpha = 0.18 + 0.42 * strength
+    else:
+        color = _blend_rgb("#ECECEC", "#5E5E5E", strength)
+        alpha = 0.26 + 0.46 * strength
+    lw = 0.46 + 0.40 * strength
+    return color, alpha, lw
+
+
+def _context_curve_indices(K: int, active_ids, *, max_curves: int = 320):
+    sample = np.linspace(0, K - 1, min(K, max_curves), dtype=int)
+    hull_ids = np.unique(np.asarray(active_ids, dtype=int))
+    return np.unique(np.concatenate([sample, hull_ids]))
+
+
+def _plot_hull_context(ax, lams, all_J, active_ids):
+    """Draw every curve that participates in the upper hull as explicit gray context."""
+
+    hull_ids = np.unique(np.asarray(active_ids, dtype=int))
+    for uid in hull_ids:
+        ax.plot(lams, all_J[uid], color="#7E7E7E", alpha=0.58, lw=0.78, zorder=1)
+
+
+def _draw_envelope_panel(
+    ax,
+    lam_grid,
+    J_cl_star,
+    hist_id,
+    hist_fd,
+    *,
+    family_label: str | None = None,
+    panel_legend: bool = False,
+):
     lam_grid = np.asarray(lam_grid, dtype=float)
     J_cl_star = np.asarray(J_cl_star, dtype=float)
 
@@ -111,26 +167,33 @@ def plot_envelope_improved(path: Path, lam_grid, J_cl_star, hist_id, hist_fd):
     ax.set_xlabel(r"Control parameter $\lambda$")
     ax.set_ylabel(r"Value estimate $\hat F(\lambda)$")
     ax.set_xlim(float(lam_grid[0]), float(lam_grid[-1]))
+    apply_thesis_axes_style(ax, grid=False)
+    _add_family_badge(ax, family_label)
 
-    line_env = mlines.Line2D([], [], color=COLORS["ENV"], lw=1.5, label="Envelope")
-    dot_id = mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label="VQE + ID")
-    dot_fd = mlines.Line2D([], [], color=COLORS["FD"], marker="s", ls="None", ms=5, label="VQE + FD")
-    add_panel_legend(
-        ax,
-        handles=[line_env, dot_id, dot_fd],
-        placement="below",
-        ncol=3,
-        fontsize=7,
-    )
+    if panel_legend:
+        line_env = mlines.Line2D([], [], color=COLORS["ENV"], lw=1.5, label="Envelope")
+        dot_id = mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label="ID samples")
+        dot_fd = mlines.Line2D([], [], color=COLORS["FD"], marker="s", ls="None", ms=5, label="FD samples")
+        add_panel_legend(
+            ax,
+            handles=[line_env, dot_id, dot_fd],
+            placement="below",
+            ncol=3,
+            fontsize=10,
+            frameon=False,
+        )
 
-    _savefig(fig, path)
-    plt.close(fig)
 
-
-def plot_efficiency_improved(path: Path, hist_id, hist_fd, J_cl_max=None, budget: float = None):
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
-
+def _draw_efficiency_panel(
+    ax,
+    hist_id,
+    hist_fd,
+    *,
+    J_cl_max=None,
+    budget: float | None = None,
+    family_label: str | None = None,
+    panel_legend: bool = False,
+):
     if budget is None:
         budget = float(min(hist_id["evals_cum"][-1], hist_fd["evals_cum"][-1]))
     budget = float(budget)
@@ -147,20 +210,22 @@ def plot_efficiency_improved(path: Path, hist_id, hist_fd, J_cl_max=None, budget
         color=COLORS["ID"],
         alpha=0.1,
         interpolate=True,
-        label="Advantage Zone",
+        zorder=1,
     )
 
-    ax.plot(ev_id, y_id, color=COLORS["ID"], lw=1.8, label="VQE + ID")
-    ax.plot(ev_fd, y_fd, color=COLORS["FD"], lw=1.8, ls="--", label=r"VQE + FD")
+    ax.plot(ev_id, y_id, color=COLORS["ID"], lw=1.8, zorder=3)
+    ax.plot(ev_fd, y_fd, color=COLORS["FD"], lw=1.8, ls="--", zorder=3)
 
+    has_reference = False
     if J_cl_max is not None:
-        ax.axhline(J_cl_max, color=COLORS["REFERENCE"], lw=1.0, ls=":", label=r"Grid Max $J^*$")
+        has_reference = True
+        ax.axhline(J_cl_max, color=COLORS["REFERENCE"], lw=1.0, ls=":", zorder=2)
         thresh = 0.99 * J_cl_max
         idx = np.argmax(y_id >= thresh)
         if y_id[idx] >= thresh:
             cx = ev_id[idx]
             ax.vlines(cx, 0, thresh, color=COLORS["ID"], lw=1.0, alpha=0.5, linestyles="-.")
-            ax.text(cx, thresh * 0.85, f"99% @ {int(cx)}", color=COLORS["ID"], fontsize=7, ha="right", rotation=90)
+            ax.text(cx, thresh * 0.85, f"99% @ {int(cx)}", color=COLORS["ID"], fontsize=9, ha="right", rotation=90)
 
     target_step = 20
     for name, h, col, mk in [("ID", hist_id, COLORS["ID"], "o"), ("FD", hist_fd, COLORS["FD"], "s")]:
@@ -168,41 +233,68 @@ def plot_efficiency_improved(path: Path, hist_id, hist_fd, J_cl_max=None, budget
             e, j = h["evals_cum"][target_step], h["J_best"][target_step]
             if e <= budget:
                 ax.scatter(e, j, s=20, color="white", edgecolors=col, marker=mk, zorder=10, lw=0.8)
+                if name == "ID" and e >= 0.8 * budget:
+                    xytext = (-34, 8)
+                    ha = "right"
+                elif name == "ID":
+                    xytext = (-14, 10)
+                    ha = "center"
+                else:
+                    xytext = (0, -15)
+                    ha = "center"
                 ax.annotate(
-                    f"t={target_step}",
+                    "t=20",
                     (e, j),
-                    xytext=(0, -15 if name == "FD" else 10),
+                    xytext=xytext,
                     textcoords="offset points",
-                    ha="center",
-                    fontsize=6,
+                    ha=ha,
+                    fontsize=10,
                     color=col,
                 )
 
-    ax.set_xlabel("Cumulative Energy Evaluations")
-    ax.set_ylabel(r"Best-so-far Value $\hat F$")
+    ax.set_xlabel("Energy evaluations")
+    ax.set_ylabel(r"Best-so-far value $\hat F$")
     ax.set_xlim(0.0, budget)
-    add_panel_legend(ax, placement="below", ncol=2, fontsize=7)
-    _savefig(fig, path)
-    plt.close(fig)
+    apply_thesis_axes_style(ax, grid=False)
+    _add_family_badge(ax, family_label)
+
+    if panel_legend:
+        handles = [
+            mlines.Line2D([], [], color=COLORS["ID"], lw=1.8, label="VQE + ID"),
+            mlines.Line2D([], [], color=COLORS["FD"], lw=1.8, ls="--", label="VQE + FD"),
+            Patch(facecolor=COLORS["ID"], alpha=0.1, edgecolor="none", label="Advantage zone"),
+        ]
+        if has_reference:
+            handles.append(mlines.Line2D([], [], color=COLORS["REFERENCE"], lw=1.0, ls=":", label=r"Grid max $J^*$"))
+        add_panel_legend(ax, handles=handles, placement="below", ncol=2, fontsize=10, frameon=False)
 
 
-def plot_xray_improved(path: Path, lams, all_J, J_cl_star, active_ids, switch_lams, switch_vals):
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
-
+def _draw_xray_story_panel(
+    ax,
+    lams,
+    all_J,
+    J_cl_star,
+    active_ids,
+    switch_lams,
+    switch_vals,
+    *,
+    family_label: str | None = None,
+    show_ylabel: bool = True,
+    panel_legend: bool = False,
+):
     K = all_J.shape[0]
-    sample = np.linspace(0, K - 1, min(K, 320), dtype=int)
-    ax.plot(lams, all_J[sample].T, color=COLORS["REFERENCE"], alpha=0.10, lw=0.42, rasterized=True, zorder=0)
-
-    unique_ids = np.unique(active_ids)
-    first_appearance = [(np.where(active_ids == uid)[0][0], uid) for uid in unique_ids]
-    first_appearance.sort()
-    sorted_uids = [u for _, u in first_appearance]
-    curve_colors = [COLORS["ID"], "black"]
-
-    for i, uid in enumerate(sorted_uids):
-        col = curve_colors[i % 2]
-        ax.plot(lams, all_J[uid], color=col, lw=1.2, ls="--", alpha=0.60, zorder=2, label="_nolegend_")
+    sample = _context_curve_indices(K, active_ids, max_curves=320)
+    active_curve = all_J[np.asarray(active_ids, dtype=int), np.arange(len(lams))]
+    y_span = max(float(np.max(all_J) - np.min(J_cl_star)), 1e-9)
+    sampled_curves = all_J[sample]
+    distances = np.mean(np.abs(sampled_curves - active_curve[None, :]), axis=1) / y_span
+    order = np.argsort(distances)[::-1]
+    for idx in order:
+        curve = sampled_curves[idx]
+        dist = float(distances[idx])
+        color, alpha, lw = _spectrum_context_style(dist, "grayfade")
+        ax.plot(lams, curve, color=color, alpha=min(0.84, alpha + 0.08), lw=lw + 0.08, zorder=0)
+    _plot_hull_context(ax, lams, all_J, active_ids)
 
     changes = np.where(active_ids[1:] != active_ids[:-1])[0] + 1
     bounds = np.concatenate(([0], changes, [len(lams)]))
@@ -210,50 +302,49 @@ def plot_xray_improved(path: Path, lams, all_J, J_cl_star, active_ids, switch_la
     for k in range(len(bounds) - 1):
         s, e = bounds[k], bounds[k + 1]
         uid = active_ids[s]
-        try:
-            c_idx = sorted_uids.index(uid)
-            col = curve_colors[c_idx % 2]
-        except ValueError:
-            continue
         s_p = max(0, s)
         e_p = min(len(lams), e + 1)
-        ax.plot(lams[s_p:e_p], all_J[uid, s_p:e_p], color=col, lw=2.2, alpha=1.0, zorder=4)
+        ax.plot(lams[s_p:e_p], all_J[uid, s_p:e_p], color=COLORS["ID"], lw=2.2, alpha=1.0, zorder=4)
 
     if switch_lams.size > 0:
         ax.scatter(switch_lams, switch_vals, color="white", s=34, edgecolors=COLORS["ENV"], linewidths=0.9, zorder=10)
 
     ax.set_xlabel(r"Control parameter $\lambda$")
-    ax.set_ylabel(r"Energy landscape $J(z;\lambda)$")
+    ax.set_ylabel(r"Energy landscape $J(z;\lambda)$" if show_ylabel else "")
 
     y_max = np.max(all_J)
     y_env_min = np.min(J_cl_star)
     range_y = y_max - y_env_min
     ax.set_ylim(y_env_min - 0.4 * range_y, y_max + 0.05 * range_y)
     ax.set_xlim(lams[0], lams[-1])
+    apply_thesis_axes_style(ax, grid=False)
+    _add_family_badge(ax, family_label)
 
-    from matplotlib.lines import Line2D
-
-    legend_elements = [
-        Line2D([0], [0], color=COLORS["ENV"], lw=2, label="Active Branch"),
-        Line2D([0], [0], color=COLORS["ENV"], lw=1, ls="--", alpha=0.5, label="Full Curve"),
-        Line2D([0], [0], marker="o", color="w", markeredgecolor=COLORS["ENV"], markersize=6, label="Switch Point"),
-    ]
-    add_panel_legend(
-        ax,
-        handles=legend_elements,
-        placement="below",
-        ncol=3,
-        fontsize=7,
-    )
-
-    _savefig(fig, path)
-    plt.close(fig)
+    if panel_legend:
+        legend_elements = [
+            mlines.Line2D([], [], color=COLORS["ENV"], lw=2, label="Active branch"),
+            mlines.Line2D([], [], color=COLORS["REFERENCE"], lw=1, alpha=0.5, label="Full spectrum"),
+            mlines.Line2D([], [], marker="o", color="w", markeredgecolor=COLORS["ENV"], markersize=6, label="Switch point"),
+        ]
+        add_panel_legend(
+            ax,
+            handles=legend_elements,
+            placement="below",
+            ncol=3,
+            fontsize=10,
+            frameon=False,
+        )
 
 
-def plot_cost_gap_improved(path: Path, hist_id, hist_fd, budget: float):
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
-
+def _draw_cost_gap_panel(
+    ax,
+    hist_id,
+    hist_fd,
+    *,
+    budget: float,
+    family_label: str | None = None,
+    panel_legend: bool = False,
+):
     t_id, t_fd = np.arange(1, hist_id["evals_cum"].size + 1), np.arange(1, hist_fd["evals_cum"].size + 1)
     e_id, e_fd = hist_id["evals_cum"], hist_fd["evals_cum"]
 
@@ -268,16 +359,16 @@ def plot_cost_gap_improved(path: Path, hist_id, hist_fd, budget: float):
         color=COLORS["REFERENCE"],
         alpha=0.2,
         linewidth=0.0,
-        label="Cost Overhead",
+        zorder=1,
     )
 
-    ax.plot(t_id, e_id, color=COLORS["ID"], lw=2.0, label=f"VQE + ID (Slope $\\approx$ {slope_id:.1f})")
-    ax.plot(t_fd, e_fd, color=COLORS["FD"], lw=2.0, ls="--", label=f"VQE + FD (Slope $\\approx$ {slope_fd:.1f})")
+    ax.plot(t_id, e_id, color=COLORS["ID"], lw=2.0, zorder=3)
+    ax.plot(t_fd, e_fd, color=COLORS["FD"], lw=2.0, ls="--", zorder=3)
 
     idx_id = np.searchsorted(e_id, budget)
     idx_fd = np.searchsorted(e_fd, budget)
 
-    ax.axhline(budget, color=COLORS["ENV"], ls=":", lw=1.0)
+    ax.axhline(budget, color=COLORS["ENV"], ls=":", lw=1.0, zorder=2)
     if idx_id < len(t_id):
         ax.vlines(t_id[idx_id], 0, budget, color=COLORS["ID"], lw=1.5, alpha=0.8)
         ax.scatter([t_id[idx_id]], [budget], color=COLORS["ID"], s=25, zorder=5)
@@ -285,18 +376,44 @@ def plot_cost_gap_improved(path: Path, hist_id, hist_fd, budget: float):
         ax.vlines(t_fd[idx_fd], 0, budget, color=COLORS["FD"], lw=1.5, alpha=0.8)
         ax.scatter([t_fd[idx_fd]], [budget], color=COLORS["FD"], s=25, zorder=5)
 
+    ax.text(
+        0.98,
+        0.04,
+        rf"ID {slope_id:.1f} eval/step" "\n" rf"FD {slope_fd:.1f} eval/step",
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=8,
+        color=COLORS["MUTED"],
+    )
+
     ax.set_xlabel(r"Outer iteration $t$")
-    ax.set_ylabel("Cumulative Energy Evaluations")
+    ax.set_ylabel("Cumulative energy evaluations")
     ax.set_xlim(0, max(t_id[-1], t_fd[-1]))
     ax.set_ylim(0, max(e_fd[-1], budget) * 1.1)
-    add_panel_legend(ax, placement="below", ncol=2)
-    _savefig(fig, path)
-    plt.close(fig)
+    apply_thesis_axes_style(ax, grid=False)
+    _add_family_badge(ax, family_label)
+
+    if panel_legend:
+        handles = [
+            mlines.Line2D([], [], color=COLORS["ID"], lw=2.0, label="VQE + ID"),
+            mlines.Line2D([], [], color=COLORS["FD"], lw=2.0, ls="--", label="VQE + FD"),
+            Patch(facecolor=COLORS["REFERENCE"], alpha=0.2, edgecolor="none", label="Cost overhead"),
+            mlines.Line2D([], [], color=COLORS["ENV"], lw=1.0, ls=":", label=r"Budget $B$"),
+        ]
+        add_panel_legend(ax, handles=handles, placement="below", ncol=2, fontsize=10, frameon=False)
 
 
-def plot_trajectory_improved(path: Path, hist_id, hist_fd, lam_true, lam_bounds):
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
+def _draw_trajectory_panel(
+    ax,
+    hist_id,
+    hist_fd,
+    *,
+    lam_true,
+    lam_bounds,
+    family_label: str | None = None,
+    panel_legend: bool = False,
+):
     t_id = np.arange(len(hist_id["lam_pre"]))
     t_fd = np.arange(len(hist_fd["lam_pre"]))
 
@@ -317,42 +434,196 @@ def plot_trajectory_improved(path: Path, hist_id, hist_fd, lam_true, lam_bounds)
     )
 
     ax.set_ylim(lam_bounds)
-    ax.set_xlabel("Outer iteration $t$")
+    ax.set_xlabel(r"Outer iteration $t$")
     ax.set_ylabel(r"Parameter $\lambda_t$")
     ax.set_xlim(0, max(t_id[-1], t_fd[-1]))
-    add_panel_legend(ax, placement="below", ncol=2)
-    _savefig(fig, path)
+    apply_thesis_axes_style(ax, grid=False)
+    _add_family_badge(ax, family_label)
+
+    if panel_legend:
+        handles = [
+            mlines.Line2D([], [], color=COLORS["ENV"], lw=1.0, label=r"Optimum $\lambda^*$"),
+            mlines.Line2D([], [], color=COLORS["ID"], lw=1.5, label="VQE + ID"),
+            mlines.Line2D([], [], color=COLORS["FD"], lw=1.5, ls="--", label="VQE + FD"),
+            mlines.Line2D([], [], color=COLORS["ENV"], marker="x", ls="None", ms=6, label="Start"),
+        ]
+        add_panel_legend(ax, handles=handles, placement="below", ncol=2, fontsize=10, frameon=False)
+
+
+# ==============================================================================
+# THE 5 ADJUSTED PLOTTING FUNCTIONS
+# ==============================================================================
+
+
+def plot_envelope_improved(path: Path, lam_grid, J_cl_star, hist_id, hist_fd, *, family_label: str | None = None):
+    _set_exp01_plot_style(grid=False)
+    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
+    _draw_envelope_panel(ax, lam_grid, J_cl_star, hist_id, hist_fd, family_label=family_label, panel_legend=True)
+
+    save_figure(fig, path)
     plt.close(fig)
 
 
-def _draw_xray_panel(ax, family_label: str, lams, all_J, J_cl_star, active_ids, switch_lams, switch_vals):
+def plot_efficiency_improved(
+    path: Path, hist_id, hist_fd, J_cl_max=None, budget: float = None, *, family_label: str | None = None
+):
+    _set_exp01_plot_style(grid=False)
+    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
+    _draw_efficiency_panel(
+        ax,
+        hist_id,
+        hist_fd,
+        J_cl_max=J_cl_max,
+        budget=budget,
+        family_label=family_label,
+        panel_legend=True,
+    )
+    save_figure(fig, path)
+    plt.close(fig)
+
+
+def plot_xray_improved(
+    path: Path, lams, all_J, J_cl_star, active_ids, switch_lams, switch_vals, *, family_label: str | None = None
+):
+    _set_exp01_plot_style(grid=False)
+    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
+    _draw_xray_story_panel(
+        ax,
+        lams,
+        all_J,
+        J_cl_star,
+        active_ids,
+        switch_lams,
+        switch_vals,
+        family_label=family_label,
+        panel_legend=True,
+    )
+
+    save_figure(fig, path)
+    plt.close(fig)
+
+
+def plot_cost_gap_improved(path: Path, hist_id, hist_fd, budget: float, *, family_label: str | None = None):
+    _set_exp01_plot_style(grid=False)
+    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
+    _draw_cost_gap_panel(ax, hist_id, hist_fd, budget=budget, family_label=family_label, panel_legend=True)
+    save_figure(fig, path)
+    plt.close(fig)
+
+
+def plot_trajectory_improved(
+    path: Path, hist_id, hist_fd, lam_true, lam_bounds, *, family_label: str | None = None
+):
+    _set_exp01_plot_style(grid=False)
+    fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
+    _draw_trajectory_panel(
+        ax, hist_id, hist_fd, lam_true=lam_true, lam_bounds=lam_bounds, family_label=family_label, panel_legend=True
+    )
+    save_figure(fig, path)
+    plt.close(fig)
+
+
+def plot_family_story_grid(
+    path: Path,
+    *,
+    family_label: str,
+    lams,
+    all_J,
+    J_star,
+    active,
+    sw_l,
+    sw_v,
+    hist_id,
+    hist_fd,
+    lam_true,
+    lam_bounds,
+    J_cl_max,
+    budget: float,
+):
+    _set_exp01_plot_style(grid=False)
+    fig = plt.figure(figsize=grid_size(3), constrained_layout=True)
+    gs = fig.add_gridspec(4, 2, height_ratios=[1.0, 1.0, 1.0, 0.17])
+
+    ax_a = fig.add_subplot(gs[0, 0])
+    ax_b = fig.add_subplot(gs[0, 1])
+    ax_c = fig.add_subplot(gs[1, 0])
+    ax_d = fig.add_subplot(gs[1, 1])
+    ax_e = fig.add_subplot(gs[2, 0])
+    ax_empty = fig.add_subplot(gs[2, 1])
+
+    _draw_envelope_panel(ax_a, lams, J_star, hist_id, hist_fd, family_label=family_label, panel_legend=False)
+    _draw_xray_story_panel(ax_b, lams, all_J, J_star, active, sw_l, sw_v, panel_legend=False)
+    _draw_efficiency_panel(ax_c, hist_id, hist_fd, J_cl_max=J_cl_max, budget=budget, panel_legend=False)
+    _draw_cost_gap_panel(ax_d, hist_id, hist_fd, budget=budget, panel_legend=False)
+    _draw_trajectory_panel(ax_e, hist_id, hist_fd, lam_true=lam_true, lam_bounds=lam_bounds, panel_legend=False)
+
+    for label, ax in zip(["(A)", "(B)", "(C)", "(D)", "(E)"], [ax_a, ax_b, ax_c, ax_d, ax_e]):
+        _panel_label(ax, label)
+
+    ax_empty.axis("off")
+
+    legend_ax = fig.add_subplot(gs[3, :])
+    legend_ax.axis("off")
+    handles = [
+        mlines.Line2D([], [], color=COLORS["ID"], lw=1.8, label="VQE + ID"),
+        mlines.Line2D([], [], color=COLORS["FD"], lw=1.8, ls="--", label="VQE + FD"),
+        mlines.Line2D([], [], color=COLORS["REFERENCE"], lw=1.0, ls=":", label="Reference / target"),
+        Patch(facecolor=COLORS["ID"], alpha=0.10, edgecolor="none", label="Highlighted region"),
+        mlines.Line2D([], [], color=COLORS["ENV"], lw=2.0, label="Active branch"),
+        mlines.Line2D([], [], color=COLORS["ENV"], marker="x", ls="None", ms=6, label="Start / key marker"),
+    ]
+    legend_ax.legend(
+        handles=handles,
+        loc="center",
+        ncol=3,
+        frameon=False,
+        fancybox=False,
+        borderpad=0.35,
+        columnspacing=1.2,
+        handlelength=1.8,
+        handletextpad=0.6,
+        fontsize=10,
+    )
+
+    save_figure(fig, path)
+    plt.close(fig)
+
+
+def _draw_xray_panel(
+    ax,
+    family_label: str,
+    lams,
+    all_J,
+    J_cl_star,
+    active_ids,
+    switch_lams,
+    switch_vals,
+    *,
+    show_ylabel: bool = True,
+    context_style: str = "grayfade",
+):
     K = all_J.shape[0]
-    sample = np.linspace(0, K - 1, min(K, 320), dtype=int)
-    ax.plot(lams, all_J[sample].T, color=COLORS["REFERENCE"], alpha=0.10, lw=0.42, rasterized=True, zorder=0)
-
-    unique_ids = np.unique(active_ids)
-    first_appearance = [(np.where(active_ids == uid)[0][0], uid) for uid in unique_ids]
-    first_appearance.sort()
-    sorted_uids = [u for _, u in first_appearance]
-    curve_colors = [COLORS["ID"], "black"]
-
-    for i, uid in enumerate(sorted_uids):
-        col = curve_colors[i % 2]
-        ax.plot(lams, all_J[uid], color=col, lw=1.0, ls="--", alpha=0.45, zorder=1)
+    sample = _context_curve_indices(K, active_ids, max_curves=320)
+    active_curve = all_J[np.asarray(active_ids, dtype=int), np.arange(len(lams))]
+    y_span = max(float(np.max(all_J) - np.min(J_cl_star)), 1e-9)
+    sampled_curves = all_J[sample]
+    distances = np.mean(np.abs(sampled_curves - active_curve[None, :]), axis=1) / y_span
+    order = np.argsort(distances)[::-1]
+    for idx in order:
+        curve = sampled_curves[idx]
+        dist = float(distances[idx])
+        color, alpha, lw = _spectrum_context_style(dist, context_style)
+        ax.plot(lams, curve, color=color, alpha=alpha, lw=lw, zorder=0)
+    _plot_hull_context(ax, lams, all_J, active_ids)
 
     changes = np.where(active_ids[1:] != active_ids[:-1])[0] + 1
     bounds = np.concatenate(([0], changes, [len(lams)]))
     for k in range(len(bounds) - 1):
         s, e = bounds[k], bounds[k + 1]
         uid = active_ids[s]
-        try:
-            c_idx = sorted_uids.index(uid)
-            col = curve_colors[c_idx % 2]
-        except ValueError:
-            continue
         s_p = max(0, s)
         e_p = min(len(lams), e + 1)
-        ax.plot(lams[s_p:e_p], all_J[uid, s_p:e_p], color=col, lw=1.8, alpha=1.0, zorder=3)
+        ax.plot(lams[s_p:e_p], all_J[uid, s_p:e_p], color=COLORS["ID"], lw=1.8, alpha=1.0, zorder=3)
 
     if switch_lams.size > 0:
         ax.scatter(switch_lams, switch_vals, color="white", s=22, edgecolors=COLORS["ENV"], linewidths=0.7, zorder=6)
@@ -360,19 +631,24 @@ def _draw_xray_panel(ax, family_label: str, lams, all_J, J_cl_star, active_ids, 
     y_max = np.max(all_J)
     y_env_min = np.min(J_cl_star)
     range_y = y_max - y_env_min
-    ax.set_ylim(y_env_min - 0.38 * range_y, y_max + 0.05 * range_y)
+    ax.set_ylim(y_env_min - 0.34 * range_y, y_max + 0.02 * range_y)
     ax.set_xlim(lams[0], lams[-1])
     ax.set_xlabel(r"$\lambda$")
-    ax.set_ylabel(r"$J(z;\lambda)$")
-    ax.text(0.5, 1.01, family_label, transform=ax.transAxes, ha="center", va="bottom", fontsize=8)
+    ax.set_ylabel(r"$J(z;\lambda)$" if show_ylabel else "")
+    apply_thesis_axes_style(ax, grid=False)
+    _add_family_badge(ax, family_label)
 
 
-def plot_spectrum_compare_collage(path: Path, panels):
-    set_pub_style(grid=False)
-    fig, axes = plt.subplots(1, 3, figsize=(FULL_W, H_COL), constrained_layout=False)
-    fig.subplots_adjust(left=0.06, right=0.99, bottom=0.26, top=0.92, wspace=0.28)
+def plot_spectrum_compare_collage(path: Path, panels, *, context_style: str = "grayfade"):
+    _set_exp01_plot_style(grid=False)
+    fig = plt.figure(figsize=(FIG_W, dual_panel_size()[1]), constrained_layout=True)
+    gs = fig.add_gridspec(2, 3, height_ratios=[1.0, 0.11])
+    axes = [fig.add_subplot(gs[0, 0])]
+    axes.extend(fig.add_subplot(gs[0, i], sharey=axes[0]) for i in range(1, 3))
+    for ax in axes:
+        ax.set_box_aspect(1.0)
 
-    for ax, panel in zip(axes, panels):
+    for idx, (ax, panel) in enumerate(zip(axes, panels)):
         _draw_xray_panel(
             ax,
             panel["label"],
@@ -382,17 +658,33 @@ def plot_spectrum_compare_collage(path: Path, panels):
             panel["active"],
             panel["sw_l"],
             panel["sw_v"],
+            show_ylabel=(idx == 0),
+            context_style=context_style,
         )
 
     from matplotlib.lines import Line2D
 
+    spectrum_legend_color = "#707070" if context_style != "redfade" else "#C97A86"
     handles = [
-        Line2D([0], [0], color=COLORS["REFERENCE"], lw=1.0, alpha=0.5, label="Full spectrum"),
+        Line2D([0], [0], color=spectrum_legend_color, lw=1.2, alpha=0.8, label="Full spectrum"),
         Line2D([0], [0], color=COLORS["ID"], lw=1.8, label="Active branch"),
         Line2D([0], [0], marker="o", color="w", markeredgecolor=COLORS["ENV"], markersize=5, label="Switch points"),
     ]
-    add_figure_legend(fig, handles, [h.get_label() for h in handles], ncol=3)
-    _savefig(fig, path)
+    legend_ax = fig.add_subplot(gs[1, :])
+    legend_ax.axis("off")
+    legend_ax.legend(
+        handles=handles,
+        loc="center",
+        ncol=3,
+        frameon=False,
+        fancybox=False,
+        borderpad=0.35,
+        columnspacing=1.2,
+        handlelength=1.8,
+        handletextpad=0.6,
+        fontsize=10,
+    )
+    save_figure(fig, path)
     plt.close(fig)
 
 
@@ -597,18 +889,52 @@ def _run_single_family(args, kind: str, out: Path):
 
     B = float(args.budget_evals)
     suf = f"{kind}_n{args.n}_seed{args.seed}"
-    plot_envelope_improved(out / f"1_envelope_zoom_{suf}.{args.fmt}", lams, J_star, h_id, h_fd)
-    plot_xray_improved(out / f"2_xray_segments_bw_{suf}.{args.fmt}", lams, all_J, J_star, active, sw_l, sw_v)
-    plot_efficiency_improved(out / f"3_efficiency_zone_{suf}.{args.fmt}", h_id, h_fd, J_cl_max=J_max, budget=B)
-    plot_cost_gap_improved(out / f"4_cost_gap_waste_{suf}.{args.fmt}", h_id, h_fd, budget=B)
+    family_label = kind.title()
+    plot_family_story_grid(
+        out / f"0_story_grid_{suf}.{args.fmt}",
+        family_label=family_label,
+        lams=lams,
+        all_J=all_J,
+        J_star=J_star,
+        active=active,
+        sw_l=sw_l,
+        sw_v=sw_v,
+        hist_id=h_id,
+        hist_fd=h_fd,
+        lam_true=lam_true,
+        lam_bounds=(args.lam_min, args.lam_max),
+        J_cl_max=J_max,
+        budget=B,
+    )
+    plot_envelope_improved(out / f"1_envelope_zoom_{suf}.{args.fmt}", lams, J_star, h_id, h_fd, family_label=family_label)
+    plot_xray_improved(
+        out / f"2_xray_segments_bw_{suf}.{args.fmt}",
+        lams,
+        all_J,
+        J_star,
+        active,
+        sw_l,
+        sw_v,
+        family_label=family_label,
+    )
+    plot_efficiency_improved(
+        out / f"3_efficiency_zone_{suf}.{args.fmt}", h_id, h_fd, J_cl_max=J_max, budget=B, family_label=family_label
+    )
+    plot_cost_gap_improved(out / f"4_cost_gap_waste_{suf}.{args.fmt}", h_id, h_fd, budget=B, family_label=family_label)
     plot_trajectory_improved(
-        out / f"5_trajectory_target_{suf}.{args.fmt}", h_id, h_fd, lam_true, (args.lam_min, args.lam_max)
+        out / f"5_trajectory_target_{suf}.{args.fmt}",
+        h_id,
+        h_fd,
+        lam_true,
+        (args.lam_min, args.lam_max),
+        family_label=family_label,
     )
 
     summary_lines = [
         "Experiment 1 — Core ID vs FD Demo",
         f"family={kind} | n={args.n} | seed={args.seed} | p_edge={args.p_edge} | graph_seed={args.graph_seed}",
         f"periodic_K={args.periodic_K} | budget_evals={args.budget_evals} | lam0={args.lam0}",
+        f"story_grid=0_story_grid_{suf}.{args.fmt}",
         f"final best ID={float(h_id['J_best'][-1]):.4f} | final best FD={float(h_fd['J_best'][-1]):.4f}",
         f"final evals ID={float(h_id['evals_cum'][-1]):.1f} | final evals FD={float(h_fd['evals_cum'][-1]):.1f}",
     ]
@@ -664,12 +990,22 @@ def main():
         compare_path = (
             compare_dir / f"exp01_spectrum_compare_linear_quadratic_periodic_n{args.n}_seed{args.seed}.{args.fmt}"
         )
-        plot_spectrum_compare_collage(compare_path, panels)
+        compare_gray_path = (
+            compare_dir / f"exp01_spectrum_compare_linear_quadratic_periodic_n{args.n}_seed{args.seed}_grayfade.{args.fmt}"
+        )
+        compare_red_path = (
+            compare_dir / f"exp01_spectrum_compare_linear_quadratic_periodic_n{args.n}_seed{args.seed}_redfade.{args.fmt}"
+        )
+        plot_spectrum_compare_collage(compare_path, panels, context_style="grayfade")
+        plot_spectrum_compare_collage(compare_gray_path, panels, context_style="grayfade")
+        plot_spectrum_compare_collage(compare_red_path, panels, context_style="redfade")
         compare_summary = [
             "Experiment 1 — Spectrum compare",
             f"families=linear,quadratic,periodic | n={args.n} | seed={args.seed}",
             f"graph_seed={args.graph_seed} | p_edge={args.p_edge} | periodic_K={args.periodic_K}",
             compare_path.name,
+            compare_gray_path.name,
+            compare_red_path.name,
         ]
         (compare_dir / "SUMMARY.txt").write_text("\n".join(compare_summary) + "\n", encoding="utf-8")
         print(f"Done! Results in {root.resolve()}")

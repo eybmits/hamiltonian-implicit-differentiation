@@ -75,6 +75,7 @@ from typing import Dict, List, Tuple
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import numpy as np
+from plot_style import FIG_H, FIG_W, apply_thesis_axes_style, dual_panel_size, save_figure, use_thesis_style
 
 from paramham.experiment_defaults import (
     CANONICAL_SETUP,
@@ -89,7 +90,7 @@ from paramham.families import Family1D
 from paramham.io import parse_int_list
 from paramham.maxcut import build_cut_mask
 from paramham.maxcut import precompute_z as precompute_z_big_endian
-from paramham.plotting import COL_W, COLORS, FULL_W, H_COL, _savefig, add_panel_legend, set_pub_style
+from paramham.plotting import COLORS, add_panel_legend
 from paramham.simulator import vqe_state
 from paramham.spsa import spsa_minimize
 
@@ -99,11 +100,20 @@ from paramham.spsa import spsa_minimize
 
 
 def fig_size() -> Tuple[float, float]:
-    return (COL_W, H_COL)
+    return (FIG_W, FIG_H)
 
 
 def fig_size_wide() -> Tuple[float, float]:
-    return (FULL_W, H_COL + 0.20)
+    return dual_panel_size()
+
+
+def _set_exp04_plot_style(grid: bool = True):
+    use_thesis_style()
+    plt.rcParams["axes.grid"] = bool(grid)
+    plt.rcParams["grid.alpha"] = 0.7
+    plt.rcParams["grid.linestyle"] = "-"
+    plt.rcParams["grid.linewidth"] = 0.75
+    plt.rcParams["grid.color"] = "#D7D7D7"
 
 
 def _cache_default_dir(out: Path) -> Path:
@@ -490,10 +500,7 @@ def plot_auc_gain_by_K(path: Path, rows: List[Dict], K_list: List[int]):
     Main robustness figure:
       per-instance AUC gain scatter (jittered) + mean ± s.e.m. per K.
     """
-    set_pub_style(grid=True, base_size=8)
-    plt.rcParams["axes.grid"] = True
-    plt.rcParams["grid.alpha"] = 0.18
-    plt.rcParams["grid.linestyle"] = "--"
+    _set_exp04_plot_style(grid=True)
     fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
 
     rng_jit = np.random.default_rng(12345)
@@ -543,6 +550,7 @@ def plot_auc_gain_by_K(path: Path, rows: List[Dict], K_list: List[int]):
         ymin = min(np.min(finite) - 0.01, -0.005)
         ymax = max(np.max(finite) + 0.015, 0.015)
         ax.set_ylim(ymin, ymax)
+    apply_thesis_axes_style(ax, grid=True)
 
     # Compact legend (proxy artists)
     h1 = ax.scatter([], [], s=16, color=COLORS["NEUTRAL"], alpha=0.75, edgecolors="none", label="Instances")
@@ -559,7 +567,7 @@ def plot_auc_gain_by_K(path: Path, rows: List[Dict], K_list: List[int]):
     )
     add_panel_legend(ax, handles=[h1, h2], placement="below", ncol=2)
 
-    _savefig(fig, path)
+    save_figure(fig, path)
     plt.close(fig)
 
 
@@ -568,10 +576,7 @@ def plot_winrate_by_K(path: Path, rows: List[Dict], K_list: List[int]):
     Secondary robustness plot:
       win rate = fraction of instances with AUC_gain > 0.
     """
-    set_pub_style(grid=True, base_size=8)
-    plt.rcParams["axes.grid"] = True
-    plt.rcParams["grid.alpha"] = 0.18
-    plt.rcParams["grid.linestyle"] = "--"
+    _set_exp04_plot_style(grid=True)
     fig, ax = plt.subplots(figsize=fig_size(), constrained_layout=True)
 
     rates = []
@@ -606,19 +611,19 @@ def plot_winrate_by_K(path: Path, rows: List[Dict], K_list: List[int]):
     ax.set_ylabel(r"Win rate $\Pr(\mathrm{AUC\ gain}>0)$")
     ax.set_xticks(K_list)
     ax.set_xlim(min(K_list) - 0.6, max(K_list) + 0.6)
+    apply_thesis_axes_style(ax, grid=True)
 
-    _savefig(fig, path)
+    save_figure(fig, path)
     plt.close(fig)
 
 
 def plot_robustness_panels(path: Path, rows: List[Dict], K_list: List[int]):
-    set_pub_style(grid=True, base_size=8)
-    plt.rcParams["axes.grid"] = True
-    plt.rcParams["grid.alpha"] = 0.18
-    plt.rcParams["grid.linestyle"] = "--"
+    _set_exp04_plot_style(grid=True)
 
-    fig, axs = plt.subplots(1, 2, figsize=fig_size_wide(), constrained_layout=True)
-    ax_gain, ax_win = axs
+    fig = plt.figure(figsize=dual_panel_size(), constrained_layout=True)
+    gs = fig.add_gridspec(2, 2, height_ratios=[1.0, 0.14])
+    ax_gain = fig.add_subplot(gs[0, 0])
+    ax_win = fig.add_subplot(gs[0, 1])
 
     rng_jit = np.random.default_rng(12345)
     for K in K_list:
@@ -675,6 +680,8 @@ def plot_robustness_panels(path: Path, rows: List[Dict], K_list: List[int]):
         ax_win.set_ylim(max(0.45, ymin) if ymin > 0.55 else 0.0, ymax)
     else:
         ax_win.set_ylim(-0.02, 1.02)
+    apply_thesis_axes_style(ax_gain, grid=True)
+    apply_thesis_axes_style(ax_win, grid=True)
 
     ax_gain.text(-0.04, 1.04, "(A)", transform=ax_gain.transAxes, fontsize=11, fontweight="bold", va="bottom")
     ax_win.text(-0.04, 1.04, "(B)", transform=ax_win.transAxes, fontsize=11, fontweight="bold", va="bottom")
@@ -683,9 +690,22 @@ def plot_robustness_panels(path: Path, rows: List[Dict], K_list: List[int]):
         mlines.Line2D([], [], color=COLORS["NEUTRAL"], marker="o", ls="None", ms=4, label="Instances"),
         mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label=r"Mean $\pm$ s.e.m."),
     ]
-    add_panel_legend(ax_gain, handles=handles, placement="above_right", ncol=1)
+    legend_ax = fig.add_subplot(gs[1, :])
+    legend_ax.axis("off")
+    legend_ax.legend(
+        handles=handles,
+        loc="center",
+        ncol=2,
+        frameon=False,
+        fancybox=False,
+        borderpad=0.35,
+        columnspacing=1.2,
+        handlelength=1.8,
+        handletextpad=0.6,
+        fontsize=10,
+    )
 
-    _savefig(fig, path)
+    save_figure(fig, path)
     plt.close(fig)
 
 

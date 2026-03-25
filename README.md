@@ -29,6 +29,17 @@ make rerender
 
 The standard environment is handled by the `Makefile` (`PYTHONPATH=src`, `MPLCONFIGDIR=/tmp/mpl`).
 
+## Publication Plot Standard
+
+All final figures use the shared helper in `experiments/plot_style.py`.
+
+- fixed publication width: `5.7295 in` (`0.98\textwidth` in the thesis)
+- TeX serif typography with `10 pt` base font and `11 pt` axis labels
+- white figure backgrounds
+- exact PDF saving without `bbox_inches='tight'`
+
+Exp 2 is the canonical layout reference for the rest of the suite. The other experiments reuse the same physical sizing rules, footer-legend mechanism, and panel geometry conventions.
+
 ## Canonical Experiment Suite
 
 | Experiment | Public script | Output folder |
@@ -76,6 +87,7 @@ Each experiment output folder contains:
 ## Documentation
 
 - [Experiment Reference](docs/experiments.md)
+- [Plot Style Standard](docs/plot_style.md)
 - [Reproducibility Guide](docs/reproducibility.md)
 - [Output Manifest](output/README.md)
 - [Contributing](CONTRIBUTING.md)

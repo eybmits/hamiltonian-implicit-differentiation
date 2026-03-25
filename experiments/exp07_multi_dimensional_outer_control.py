@@ -93,6 +93,7 @@ from typing import Dict, List
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
+from plot_style import FIG_H, FIG_W, apply_thesis_axes_style, dual_panel_size, grid_size, save_figure, use_thesis_style
 
 from paramham.experiment_defaults import (
     CANONICAL_SETUP,
@@ -107,7 +108,7 @@ from paramham.families import FamilyEdgeWise
 from paramham.io import parse_int_list
 from paramham.maxcut import build_cut_mask, build_ZZ_edges
 from paramham.maxcut import precompute_z as precompute_z_big_endian
-from paramham.plotting import COL_W, COLORS, FULL_W, H_COL, _savefig, add_figure_legend, add_panel_legend, set_pub_style
+from paramham.plotting import COLORS, H_COL, add_panel_legend
 from paramham.seeds import to_uint_seed
 from paramham.simulator import vqe_state
 from paramham.spsa import spsa_minimize
@@ -117,6 +118,43 @@ from paramham.spsa import spsa_minimize
 # ==============================================================================
 
 H_TWO = H_COL
+
+
+def _set_exp07_plot_style(grid: bool = False):
+    use_thesis_style()
+    plt.rcParams["axes.grid"] = bool(grid)
+
+
+def _single_panel_with_footer():
+    """Match the Exp2 mechanism for a single plot plus a dedicated legend row."""
+
+    fig = plt.figure(figsize=dual_panel_size(), constrained_layout=True)
+    gs = fig.add_gridspec(2, 1, height_ratios=[1.0, 0.14])
+    ax = fig.add_subplot(gs[0, 0])
+    legend_ax = fig.add_subplot(gs[1, 0])
+    legend_ax.axis("off")
+    return fig, ax, legend_ax
+
+
+def _footer_legend(legend_ax: plt.Axes, handles, labels, *, ncol: int = 2):
+    return legend_ax.legend(
+        handles,
+        labels,
+        loc="center",
+        ncol=ncol,
+        frameon=False,
+        handlelength=1.8,
+        handletextpad=0.6,
+        columnspacing=1.2,
+    )
+
+
+def _compact_collage_axis(ax: plt.Axes):
+    """Slightly tighten label/tick typography for square sixpack panels."""
+
+    ax.xaxis.label.set_size(10)
+    ax.yaxis.label.set_size(10)
+    ax.tick_params(axis="both", which="major", labelsize=9)
 
 
 # ==============================================================================
@@ -640,13 +678,13 @@ def plot_2panel_budget_and_gain(
 
     best_*_grid: (N, G)
     """
-    set_pub_style(grid=False)
+    _set_exp07_plot_style(grid=False)
     b = np.asarray(budget_grid, float)
 
     mu_id, se_id = _mean_stderr(best_id_grid, axis=0)
     mu_fd, se_fd = _mean_stderr(best_fd_grid, axis=0)
 
-    fig, axs = plt.subplots(1, 2, figsize=(FULL_W, H_TWO), constrained_layout=True)
+    fig, axs = plt.subplots(1, 2, figsize=dual_panel_size(), constrained_layout=True)
 
     # Left panel: Budget curves
     ax = axs[0]
@@ -661,6 +699,7 @@ def plot_2panel_budget_and_gain(
     y0 = max(0.0, float(np.nanmin(y_all) - 0.04))
     y1 = min(1.05, float(np.nanmax(y_all) + 0.04))
     ax.set_ylim(y0, y1)
+    apply_thesis_axes_style(ax, grid=False)
     add_panel_legend(ax, placement="below", ncol=2)
 
     # Right panel: ΔAUC vs |E|
@@ -673,8 +712,9 @@ def plot_2panel_budget_and_gain(
 
     ax.set_xlabel(r"Number of edges $|E|$")
     ax.set_ylabel(r"$\Delta \mathrm{AUC}_B$ (ID $-$ FD)")
+    apply_thesis_axes_style(ax, grid=False)
 
-    _savefig(fig, path)
+    save_figure(fig, path)
     plt.close(fig)
 
 
@@ -686,8 +726,8 @@ def plot_steps_bar(
     """
     Bar chart: outer steps completed within budget B (mean±stderr).
     """
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=(COL_W, H_TWO), constrained_layout=True)
+    _set_exp07_plot_style(grid=False)
+    fig, ax = plt.subplots(figsize=(FIG_W, FIG_H), constrained_layout=True)
 
     sid = np.asarray(steps_id, float)
     sfd = np.asarray(steps_fd, float)
@@ -729,7 +769,8 @@ def plot_steps_bar(
         fontsize=7,
     )
 
-    _savefig(fig, path)
+    apply_thesis_axes_style(ax, grid=False)
+    save_figure(fig, path)
     plt.close(fig)
 
 
@@ -758,8 +799,8 @@ def _interesting_ylim_arrays(
 
 
 def plot_budget_curve(path: Path, budget_grid: np.ndarray, best_id_grid: np.ndarray, best_fd_grid: np.ndarray):
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=(COL_W, H_TWO), constrained_layout=True)
+    _set_exp07_plot_style(grid=False)
+    fig, ax, legend_ax = _single_panel_with_footer()
     b = np.asarray(budget_grid, float)
     mu_id, se_id = _mean_stderr(best_id_grid, axis=0)
     mu_fd, se_fd = _mean_stderr(best_fd_grid, axis=0)
@@ -772,16 +813,16 @@ def plot_budget_curve(path: Path, budget_grid: np.ndarray, best_id_grid: np.ndar
     ax.set_ylabel(r"Best-so-far $F/J^*$")
     ax.set_xlim(float(b[0]), float(b[-1]))
     ax.set_ylim(*_interesting_ylim_arrays([mu_id - se_id, mu_id + se_id, mu_fd - se_fd, mu_fd + se_fd]))
-    leg = add_panel_legend(ax, placement="below", ncol=2)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-    _savefig(fig, path)
+    apply_thesis_axes_style(ax, grid=False)
+    handles, labels = ax.get_legend_handles_labels()
+    _footer_legend(legend_ax, handles, labels, ncol=2)
+    save_figure(fig, path)
     plt.close(fig)
 
 
 def plot_auc_gain_scatter(path: Path, auc_gain: np.ndarray, m_edges: np.ndarray):
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=(COL_W, H_TWO), constrained_layout=True)
+    _set_exp07_plot_style(grid=False)
+    fig, ax, legend_ax = _single_panel_with_footer()
     x = np.asarray(m_edges, float)
     y = np.asarray(auc_gain, float)
     pos = y > 0.0
@@ -790,25 +831,23 @@ def plot_auc_gain_scatter(path: Path, auc_gain: np.ndarray, m_edges: np.ndarray)
     ax.scatter(x[~pos], y[~pos], s=28, color=COLORS["FD"], alpha=0.88, edgecolors="white", linewidths=0.4, zorder=3)
     ax.set_xlabel(r"Number of edges $|E|$")
     ax.set_ylabel(r"$\Delta \mathrm{AUC}_B$ (ID $-$ FD)")
-    leg = add_panel_legend(
-        ax,
-        placement="below",
-        ncol=2,
-        handles=[
+    _footer_legend(
+        legend_ax,
+        [
             Line2D([], [], color=COLORS["ID"], marker="o", lw=0, markersize=5, label="ID > FD"),
             Line2D([], [], color=COLORS["FD"], marker="o", lw=0, markersize=5, label="FD >= ID"),
         ],
-        labels=["ID > FD", "FD >= ID"],
+        ["ID > FD", "FD >= ID"],
+        ncol=2,
     )
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-    _savefig(fig, path)
+    apply_thesis_axes_style(ax, grid=False)
+    save_figure(fig, path)
     plt.close(fig)
 
 
 def plot_steps_bar_pretty(path: Path, steps_id: np.ndarray, steps_fd: np.ndarray):
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=(COL_W, H_TWO), constrained_layout=True)
+    _set_exp07_plot_style(grid=False)
+    fig, ax, legend_ax = _single_panel_with_footer()
 
     sid = np.asarray(steps_id, float)
     sfd = np.asarray(steps_fd, float)
@@ -828,24 +867,23 @@ def plot_steps_bar_pretty(path: Path, steps_id: np.ndarray, steps_fd: np.ndarray
     ax.set_xticks(xs)
     ax.set_xticklabels(["ID", "FD"])
     ax.set_ylabel(r"Outer steps within budget $B$")
-    leg = add_panel_legend(
-        ax,
-        placement="below",
-        ncol=2,
-        handles=[
+    _footer_legend(
+        legend_ax,
+        [
             Line2D([], [], color=COLORS["ID"], lw=2.0, label="VQE + ID"),
             Line2D([], [], color=COLORS["FD"], lw=2.0, ls="--", label="VQE + FD"),
         ],
-        labels=["VQE + ID", "VQE + FD"],
+        ["VQE + ID", "VQE + FD"],
+        ncol=2,
     )
-    leg.get_frame().set_linewidth(0.0)
-    _savefig(fig, path)
+    apply_thesis_axes_style(ax, grid=False)
+    save_figure(fig, path)
     plt.close(fig)
 
 
 def plot_pair_scatter(path: Path, x: np.ndarray, y: np.ndarray, *, xlabel: str, ylabel: str):
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=(COL_W, H_TWO), constrained_layout=True)
+    _set_exp07_plot_style(grid=False)
+    fig, ax, legend_ax = _single_panel_with_footer()
     x = np.asarray(x, float)
     y = np.asarray(y, float)
     pos = y > x + 1e-12
@@ -879,25 +917,23 @@ def plot_pair_scatter(path: Path, x: np.ndarray, y: np.ndarray, *, xlabel: str, 
             fontsize=7,
             color=COLORS["MUTED"],
         )
-    leg = add_panel_legend(
-        ax,
-        placement="below",
-        ncol=2,
-        handles=[
+    _footer_legend(
+        legend_ax,
+        [
             Line2D([], [], color=COLORS["ID"], marker="o", lw=0, markersize=5, label="ID > FD"),
             Line2D([], [], color=COLORS["FD"], marker="o", lw=0, markersize=5, label="FD >= ID"),
         ],
-        labels=["ID > FD", "FD >= ID"],
+        ["ID > FD", "FD >= ID"],
+        ncol=2,
     )
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-    _savefig(fig, path)
+    apply_thesis_axes_style(ax, grid=False)
+    save_figure(fig, path)
     plt.close(fig)
 
 
 def plot_n_sweep(path: Path, n_sweep_rows: List[Dict]):
-    set_pub_style(grid=False)
-    fig, ax = plt.subplots(figsize=(COL_W, H_TWO), constrained_layout=True)
+    _set_exp07_plot_style(grid=False)
+    fig, ax, legend_ax = _single_panel_with_footer()
     rows = sorted(n_sweep_rows, key=lambda r: int(r["n"]))
     n_vals = np.asarray([int(r["n"]) for r in rows], float)
     for name, mu_key, se_key in (("ID", "id_mean", "id_se"), ("FD", "fd_mean", "fd_se")):
@@ -927,10 +963,10 @@ def plot_n_sweep(path: Path, n_sweep_rows: List[Dict]):
     ax.set_xlabel(r"System size $n$")
     ax.set_ylabel(r"Best-so-far at budget $B$  ($F/J^*$)")
     ax.set_ylim(*_interesting_ylim_arrays([np.asarray(lows), np.asarray(highs)]))
-    leg = add_panel_legend(ax, placement="below", ncol=2)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-    _savefig(fig, path)
+    apply_thesis_axes_style(ax, grid=False)
+    handles, labels = ax.get_legend_handles_labels()
+    _footer_legend(legend_ax, handles, labels, ncol=2)
+    save_figure(fig, path)
     plt.close(fig)
 
 
@@ -950,10 +986,14 @@ def plot_sixpack_collage(
     auc_id: np.ndarray,
     auc_fd: np.ndarray,
 ):
-    set_pub_style(grid=False, base_size=8)
-    fig, axes = plt.subplots(2, 3, figsize=(FULL_W, 2 * H_TWO + 1.0), constrained_layout=False)
-    axes = np.asarray(axes)
-    fig.subplots_adjust(left=0.08, right=0.985, bottom=0.15, top=0.985, wspace=0.36, hspace=0.42)
+    _set_exp07_plot_style(grid=False)
+    fig = plt.figure(figsize=grid_size(2), constrained_layout=True)
+    gs = fig.add_gridspec(3, 3, height_ratios=[1.0, 1.0, 0.17])
+    axes = np.empty((2, 3), dtype=object)
+    for r in range(2):
+        for c in range(3):
+            axes[r, c] = fig.add_subplot(gs[r, c])
+            axes[r, c].set_box_aspect(1.0)
 
     b = np.asarray(budget_grid, float)
     mu_id, se_id = _mean_stderr(best_id_grid, axis=0)
@@ -963,10 +1003,12 @@ def plot_sixpack_collage(
     ax.fill_between(b, mu_id - se_id, mu_id + se_id, color=COLORS["ID"], alpha=0.14, linewidth=0)
     ax.plot(b, mu_fd, color=COLORS["FD"], lw=1.9, ls="--")
     ax.fill_between(b, mu_fd - se_fd, mu_fd + se_fd, color=COLORS["FD"], alpha=0.12, linewidth=0)
-    ax.set_xlabel("Energy evaluations")
+    ax.set_xlabel("Energy evals")
     ax.set_ylabel(r"Best-so-far $F/J^*$")
     ax.set_xlim(float(b[0]), float(b[-1]))
     ax.set_ylim(*_interesting_ylim_arrays([mu_id - se_id, mu_id + se_id, mu_fd - se_fd, mu_fd + se_fd]))
+    apply_thesis_axes_style(ax, grid=False)
+    _compact_collage_axis(ax)
     _panel_label(ax, "(A)")
 
     ax = axes[0, 1]
@@ -995,9 +1037,11 @@ def plot_sixpack_collage(
         float(r["fd_mean"]) + float(r["fd_se"]) for r in rows
     ]
     ax.set_xticks(n_vals)
-    ax.set_xlabel(r"System size $n$")
-    ax.set_ylabel(r"Best-so-far at budget $B$  ($F/J^*$)")
+    ax.set_xlabel(r"Size $n$")
+    ax.set_ylabel(r"Best at $B$ ($F/J^*$)")
     ax.set_ylim(*_interesting_ylim_arrays([np.asarray(lows), np.asarray(highs)]))
+    apply_thesis_axes_style(ax, grid=False)
+    _compact_collage_axis(ax)
     _panel_label(ax, "(B)")
 
     ax = axes[0, 2]
@@ -1007,8 +1051,10 @@ def plot_sixpack_collage(
     ax.axhline(0.0, color=COLORS["REFERENCE"], lw=1.0, ls="--", zorder=1)
     ax.scatter(x[pos], y[pos], s=28, color=COLORS["ID"], alpha=0.88, edgecolors="white", linewidths=0.4, zorder=3)
     ax.scatter(x[~pos], y[~pos], s=28, color=COLORS["FD"], alpha=0.88, edgecolors="white", linewidths=0.4, zorder=3)
-    ax.set_xlabel(r"Number of edges $|E|$")
-    ax.set_ylabel(r"$\Delta \mathrm{AUC}_B$ (ID $-$ FD)")
+    ax.set_xlabel(r"Edges $|E|$")
+    ax.set_ylabel(r"$\Delta \mathrm{AUC}_B$")
+    apply_thesis_axes_style(ax, grid=False)
+    _compact_collage_axis(ax)
     _panel_label(ax, "(C)")
 
     ax = axes[1, 0]
@@ -1027,7 +1073,9 @@ def plot_sixpack_collage(
     )
     ax.set_xticks(xs)
     ax.set_xticklabels(["ID", "FD"])
-    ax.set_ylabel(r"Outer steps within budget $B$")
+    ax.set_ylabel(r"Steps at $B$")
+    apply_thesis_axes_style(ax, grid=False)
+    _compact_collage_axis(ax)
     _panel_label(ax, "(D)")
 
     def _scatter_panel(ax, xvals, yvals, xlabel, ylabel, label):
@@ -1067,6 +1115,8 @@ def plot_sixpack_collage(
         ax.set_ylim(lo, hi)
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
+        apply_thesis_axes_style(ax, grid=False)
+        _compact_collage_axis(ax)
         win = 100.0 * float(np.mean(pos_local))
         ax.text(
             0.98,
@@ -1075,7 +1125,7 @@ def plot_sixpack_collage(
             transform=ax.transAxes,
             ha="right",
             va="bottom",
-            fontsize=7,
+            fontsize=6,
             color=COLORS["MUTED"],
         )
         _panel_label(ax, label)
@@ -1084,11 +1134,11 @@ def plot_sixpack_collage(
         axes[1, 1],
         best_final_fd,
         best_final_id,
-        r"VQE + FD at budget $B$  ($F/J^*$)",
-        r"VQE + ID at budget $B$  ($F/J^*$)",
+        r"FD at $B$ ($F/J^*$)",
+        r"ID at $B$ ($F/J^*$)",
         "(E)",
     )
-    _scatter_panel(axes[1, 2], auc_fd, auc_id, r"VQE + FD $\mathrm{AUC}_B$", r"VQE + ID $\mathrm{AUC}_B$", "(F)")
+    _scatter_panel(axes[1, 2], auc_fd, auc_id, r"FD $\mathrm{AUC}_B$", r"ID $\mathrm{AUC}_B$", "(F)")
 
     handles = [
         Line2D([], [], color=COLORS["ID"], lw=1.9, ls="-", label="VQE + ID"),
@@ -1096,11 +1146,21 @@ def plot_sixpack_collage(
         Line2D([], [], color=COLORS["ID"], marker="o", lw=0, markersize=5, label="ID > FD"),
         Line2D([], [], color=COLORS["FD"], marker="o", lw=0, markersize=5, label="FD >= ID"),
     ]
-    labels = [h.get_label() for h in handles]
-    leg = add_figure_legend(fig, handles, labels, ncol=4)
-    leg.get_frame().set_linewidth(0.0)
-    leg.get_frame().set_facecolor("white")
-    _savefig(fig, path)
+    legend_ax = fig.add_subplot(gs[2, :])
+    legend_ax.axis("off")
+    legend_ax.legend(
+        handles=handles,
+        loc="center",
+        ncol=4,
+        frameon=False,
+        fancybox=False,
+        borderpad=0.35,
+        columnspacing=1.2,
+        handlelength=1.8,
+        handletextpad=0.6,
+        fontsize=10,
+    )
+    save_figure(fig, path)
     plt.close(fig)
 
 

@@ -37,3 +37,4 @@ paper_id_vs_fd_1d_quadratic/
 paper_id_vs_fd_multi_d/
 qaoa_vs_vqe/
 output/pdf/
+output/probe_plots/

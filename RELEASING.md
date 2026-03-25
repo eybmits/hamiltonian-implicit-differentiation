@@ -35,8 +35,11 @@ git push origin vX.Y.Z
 ## Publication Repo Checklist
 
 - ensure `README.md`, `docs/experiments.md`, and `docs/reproducibility.md` all describe the same canonical `Exp 1` to `Exp 8` suite
+- ensure `docs/plot_style.md` matches the actual renderer behavior in `experiments/plot_style.py`
+- ensure final publication PDFs are rendered at the fixed thesis width `5.7295 in` and are not saved with `bbox_inches='tight'`
 - ensure `output/exp01` to `output/exp08` contain the intended final PDFs and `SUMMARY.txt`
 - ensure `output/cache/exp02` to `output/cache/exp08` are current if cache-backed rerendering is part of the release
+- ensure no exploratory folders such as `output/probe_plots` remain in `git status`
 - ensure no legacy output folders or deprecated experiment wrappers remain in `git status`
 
 ## PyPI Trusted Publishing

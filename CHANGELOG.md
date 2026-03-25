@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 The format follows Keep a Changelog and the project uses Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+- shared publication plot helper in `experiments/plot_style.py`
+- plot-style documentation in `docs/plot_style.md`
+- Exp 1 family story-grid collages under `output/exp01/*/0_story_grid_*.pdf`
+- alternate Exp 1 spectrum-compare fade variants for review under `output/exp01/spectrum_compare`
+
+### Changed
+- unified the publication figure typography, physical sizing, and PDF export policy around the Exp 2 thesis-style standard
+- rerendered the checked-in publication PDFs for Exp 1 to Exp 8 with the fixed-width thesis settings
+- aligned heatmap and sixpack collage geometry with square-panel publication layouts where required
+
 ## [0.3.0] - 2026-03-23
 
 ### Added

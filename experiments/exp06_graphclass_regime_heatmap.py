@@ -63,6 +63,7 @@ from typing import Dict, List
 
 import matplotlib.pyplot as plt
 import numpy as np
+from plot_style import grid_size, save_figure, use_thesis_style
 
 from paramham.experiment_defaults import (
     CANONICAL_SETUP,
@@ -76,7 +77,7 @@ from paramham.experiment_defaults import (
 from paramham.families import Family1D
 from paramham.io import parse_float_list, parse_int_list
 from paramham.maxcut import build_cut_mask, classical_Jstar, precompute_z
-from paramham.plotting import COLORS, FULL_W, H_COL, _savefig, set_pub_style
+from paramham.plotting import COLORS
 from paramham.simulator import expect_J, vqe_state
 from paramham.spsa import spsa_minimize
 
@@ -88,6 +89,11 @@ precompute_z_big_endian = precompute_z
 # ==============================================================================
 # Experiment-specific helpers
 # ==============================================================================
+
+
+def _set_exp06_plot_style(grid: bool = False):
+    use_thesis_style()
+    plt.rcParams["axes.grid"] = bool(grid)
 
 
 def step_auc(evals: np.ndarray, y_step: np.ndarray, x_max: float) -> float:
@@ -434,7 +440,7 @@ def plot_heatmaps(
       - >4       -> 3 columns (fallback)
     """
 
-    set_pub_style(grid=False, base_size=8)
+    _set_exp06_plot_style(grid=False)
 
     n_panels = len(graph_classes)
     if n_panels <= 0:
@@ -450,10 +456,7 @@ def plot_heatmaps(
         cols = 3
         rows = int(math.ceil(n_panels / cols))
 
-    fig_h = rows * (H_COL - 0.15) + 0.15
-    fig_w = FULL_W if cols > 1 else FULL_W / 2.0
-
-    fig, axes = plt.subplots(rows, cols, figsize=(fig_w, fig_h), constrained_layout=True)
+    fig, axes = plt.subplots(rows, cols, figsize=grid_size(rows), constrained_layout=True)
 
     # normalize axes to a 2D array of shape (rows, cols)
     if not isinstance(axes, np.ndarray):
@@ -485,7 +488,7 @@ def plot_heatmaps(
         last_im = ax.imshow(
             D,
             origin="lower",
-            aspect="auto",
+            aspect="equal",
             vmin=vmin,
             vmax=vmax,
             cmap=cmap,
@@ -545,7 +548,7 @@ def plot_heatmaps(
         cbar = fig.colorbar(last_im, ax=panel_axes, shrink=0.92, pad=0.02)
         cbar.set_label(r"$\Delta\,\mathrm{AUC}_B$ (ID $-$ BB-FD)")
 
-    _savefig(fig, path)
+    save_figure(fig, path)
     plt.close(fig)
 
 

@@ -70,6 +70,7 @@ from typing import Dict, List
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import numpy as np
+from plot_style import apply_thesis_axes_style, dual_panel_size, grid_size, save_figure, use_thesis_style
 
 from paramham.experiment_defaults import (
     CANONICAL_SETUP,
@@ -89,7 +90,9 @@ from paramham.maxcut import (
     precompute_z as precompute_z_big_endian,
 )
 from paramham.metrics import mean_stderr, step_interp
-from paramham.plotting import COL_W, COLORS, FULL_W, H_COL, _savefig, add_panel_legend, set_pub_style
+from paramham.plotting import (
+    COLORS,
+)
 
 # ---------------------------------------------------------------------------
 # Shared library imports
@@ -124,9 +127,18 @@ def _family_label(kind: str) -> str:
     }.get(str(kind), str(kind).title())
 
 
+def _set_exp03_plot_style(grid: bool = True):
+    use_thesis_style()
+    plt.rcParams["axes.grid"] = bool(grid)
+    plt.rcParams["grid.alpha"] = 0.7
+    plt.rcParams["grid.linestyle"] = "-"
+    plt.rcParams["grid.linewidth"] = 0.75
+    plt.rcParams["grid.color"] = "#D7D7D7"
+
+
 def _metric_ylabel(metric: str) -> str:
     if metric == "bestS":
-        return r"Best-of-$S$ (best cut so far) / $J^*$"
+        return r"Best-of-$S$ / $J^*$"
     if metric == "mode":
         return r"Mode cut / $J^*$"
     raise ValueError(f"Unknown metric: {metric}")
@@ -325,7 +337,7 @@ def plot_2panel_iters(path: Path, best_id: np.ndarray, best_fd: np.ndarray, mode
     best_*: (N, T) cumulative best-of-S ratios (monotone)
     mode_*: (N, T) per-step mode ratios
     """
-    set_pub_style(grid=False)
+    _set_exp03_plot_style(grid=True)
     T = best_id.shape[1]
     t = np.arange(1, T + 1)
 
@@ -334,22 +346,22 @@ def plot_2panel_iters(path: Path, best_id: np.ndarray, best_fd: np.ndarray, mode
     mu_m_id, se_m_id = mean_stderr(mode_id, axis=0)
     mu_m_fd, se_m_fd = mean_stderr(mode_fd, axis=0)
 
-    fig, axs = plt.subplots(1, 2, figsize=(FULL_W, H_TWO), constrained_layout=True)
+    fig, axs = plt.subplots(1, 2, figsize=dual_panel_size(), constrained_layout=True, sharey=True)
 
     ax = axs[0]
-    ax.plot(t, mu_b_id, color=COLORS["ID"], label="VQE + ID")
+    ax.plot(t, mu_b_id, color=COLORS["ID"], lw=2.2, label="VQE + ID", solid_capstyle="round")
     ax.fill_between(t, mu_b_id - se_b_id, mu_b_id + se_b_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
-    ax.plot(t, mu_b_fd, color=COLORS["FD"], ls="--", label="VQE + BD")
-    ax.fill_between(t, mu_b_fd - se_b_fd, mu_b_fd + se_b_fd, color=COLORS["FD"], alpha=0.18, linewidth=0)
+    ax.plot(t, mu_b_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD", solid_capstyle="round")
+    ax.fill_between(t, mu_b_fd - se_b_fd, mu_b_fd + se_b_fd, color=COLORS["FD"], alpha=0.14, linewidth=0)
     ax.set_xlabel(r"Outer iteration $t$")
-    ax.set_ylabel(r"Best-of-$S$ (best cut so far) / $J^*$")
+    ax.set_ylabel(r"Best-of-$S$ / $J^*$")
     ax.set_xlim(1, T)
 
     ax = axs[1]
-    ax.plot(t, mu_m_id, color=COLORS["ID"], label="VQE + ID")
+    ax.plot(t, mu_m_id, color=COLORS["ID"], lw=2.2, label="VQE + ID", solid_capstyle="round")
     ax.fill_between(t, mu_m_id - se_m_id, mu_m_id + se_m_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
-    ax.plot(t, mu_m_fd, color=COLORS["FD"], ls="--", label="VQE + BD")
-    ax.fill_between(t, mu_m_fd - se_m_fd, mu_m_fd + se_m_fd, color=COLORS["FD"], alpha=0.18, linewidth=0)
+    ax.plot(t, mu_m_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD", solid_capstyle="round")
+    ax.fill_between(t, mu_m_fd - se_m_fd, mu_m_fd + se_m_fd, color=COLORS["FD"], alpha=0.14, linewidth=0)
     ax.set_xlabel(r"Outer iteration $t$")
     ax.set_ylabel(r"Mode cut / $J^*$")
     ax.set_xlim(1, T)
@@ -358,13 +370,11 @@ def plot_2panel_iters(path: Path, best_id: np.ndarray, best_fd: np.ndarray, mode
     y0 = max(0.0, float(np.nanmin(y_all) - 0.04))
     y1 = min(1.05, float(np.nanmax(y_all) + 0.04))
     for ax in axs:
+        apply_thesis_axes_style(ax, grid=True)
         ax.set_ylim(y0, y1)
+        ax.legend(loc="upper left", frameon=False)
 
-    # Legend on BOTH panels (requested)
-    for ax in axs:
-        add_panel_legend(ax, placement="below", ncol=2)
-
-    _savefig(fig, path)
+    save_figure(fig, path)
     plt.close(fig)
 
 
@@ -379,7 +389,7 @@ def plot_2panel_budget(
     """
     *_grid: (N, G) traces already interpolated onto a shared budget grid.
     """
-    set_pub_style(grid=False)
+    _set_exp03_plot_style(grid=True)
     b = np.asarray(budget_grid, float)
 
     mu_b_id, se_b_id = mean_stderr(best_id_grid, axis=0)
@@ -387,22 +397,22 @@ def plot_2panel_budget(
     mu_m_id, se_m_id = mean_stderr(mode_id_grid, axis=0)
     mu_m_fd, se_m_fd = mean_stderr(mode_fd_grid, axis=0)
 
-    fig, axs = plt.subplots(1, 2, figsize=(FULL_W, H_TWO), constrained_layout=True)
+    fig, axs = plt.subplots(1, 2, figsize=dual_panel_size(), constrained_layout=True, sharey=True)
 
     ax = axs[0]
-    ax.plot(b, mu_b_id, color=COLORS["ID"], label="VQE + ID")
+    ax.plot(b, mu_b_id, color=COLORS["ID"], lw=2.2, label="VQE + ID", solid_capstyle="round")
     ax.fill_between(b, mu_b_id - se_b_id, mu_b_id + se_b_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
-    ax.plot(b, mu_b_fd, color=COLORS["FD"], ls="--", label="VQE + BD")
-    ax.fill_between(b, mu_b_fd - se_b_fd, mu_b_fd + se_b_fd, color=COLORS["FD"], alpha=0.18, linewidth=0)
+    ax.plot(b, mu_b_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD", solid_capstyle="round")
+    ax.fill_between(b, mu_b_fd - se_b_fd, mu_b_fd + se_b_fd, color=COLORS["FD"], alpha=0.14, linewidth=0)
     ax.set_xlabel("Energy evaluations")
-    ax.set_ylabel(r"Best-of-$S$ (best cut so far) / $J^*$")
+    ax.set_ylabel(r"Best-of-$S$ / $J^*$")
     ax.set_xlim(float(b[0]), float(b[-1]))
 
     ax = axs[1]
-    ax.plot(b, mu_m_id, color=COLORS["ID"], label="VQE + ID")
+    ax.plot(b, mu_m_id, color=COLORS["ID"], lw=2.2, label="VQE + ID", solid_capstyle="round")
     ax.fill_between(b, mu_m_id - se_m_id, mu_m_id + se_m_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
-    ax.plot(b, mu_m_fd, color=COLORS["FD"], ls="--", label="VQE + BD")
-    ax.fill_between(b, mu_m_fd - se_m_fd, mu_m_fd + se_m_fd, color=COLORS["FD"], alpha=0.18, linewidth=0)
+    ax.plot(b, mu_m_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD", solid_capstyle="round")
+    ax.fill_between(b, mu_m_fd - se_m_fd, mu_m_fd + se_m_fd, color=COLORS["FD"], alpha=0.14, linewidth=0)
     ax.set_xlabel("Energy evaluations")
     ax.set_ylabel(r"Mode cut / $J^*$")
     ax.set_xlim(float(b[0]), float(b[-1]))
@@ -411,13 +421,11 @@ def plot_2panel_budget(
     y0 = max(0.0, float(np.nanmin(y_all) - 0.04))
     y1 = min(1.05, float(np.nanmax(y_all) + 0.04))
     for ax in axs:
+        apply_thesis_axes_style(ax, grid=True)
         ax.set_ylim(y0, y1)
+        ax.legend(loc="upper left", frameon=False)
 
-    # Legend on BOTH panels (requested)
-    for ax in axs:
-        add_panel_legend(ax, placement="below", ncol=2)
-
-    _savefig(fig, path)
+    save_figure(fig, path)
     plt.close(fig)
 
 
@@ -439,10 +447,10 @@ def _draw_family_metric_panel(
     mu_fd, se_fd = mean_stderr(y_fd, axis=0)
 
     ax.axhline(1.0, color=COLORS["REFERENCE"], lw=1.0, ls=":", alpha=0.85, zorder=1, label="_nolegend_")
-    ax.fill_between(x, mu_fd - se_fd, mu_fd + se_fd, color=COLORS["FD"], alpha=0.16, linewidth=0, zorder=1)
+    ax.fill_between(x, mu_fd - se_fd, mu_fd + se_fd, color=COLORS["FD"], alpha=0.14, linewidth=0, zorder=1)
     ax.fill_between(x, mu_id - se_id, mu_id + se_id, color=COLORS["ID"], alpha=0.18, linewidth=0, zorder=2)
-    ax.plot(x, mu_fd, color=COLORS["FD"], lw=1.7, ls="--", label="VQE + BD", zorder=3)
-    ax.plot(x, mu_id, color=COLORS["ID"], lw=1.9, ls="-", label="VQE + ID", zorder=4)
+    ax.plot(x, mu_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD", zorder=3, solid_capstyle="round")
+    ax.plot(x, mu_id, color=COLORS["ID"], lw=2.2, ls="-", label="VQE + ID", zorder=4, solid_capstyle="round")
 
     if xaxis == "budget":
         if marker_id_t20 is not None:
@@ -464,9 +472,8 @@ def _draw_family_metric_panel(
                     xytext=(0, 10),
                     textcoords="offset points",
                     color=COLORS["ID"],
-                    fontsize=7,
+                    fontsize=10,
                     ha="center",
-                    fontweight="bold",
                 )
         if marker_fd_t20 is not None:
             x_fd, y_fd_marker = marker_fd_t20
@@ -487,11 +494,11 @@ def _draw_family_metric_panel(
                     xytext=(0, -12),
                     textcoords="offset points",
                     color=COLORS["FD"],
-                    fontsize=7,
+                    fontsize=10,
                     ha="center",
-                    fontweight="bold",
                 )
 
+    apply_thesis_axes_style(ax, grid=True)
     ax.set_ylim(*y_limits)
     ax.set_xlim(float(x[0]), float(x[-1]))
     ax.set_ylabel(_metric_ylabel(metric))
@@ -505,9 +512,9 @@ def _draw_family_metric_panel(
         transform=ax.transAxes,
         ha="left",
         va="top",
-        fontsize=8,
+        fontsize=10,
         color=COLORS["MUTED"],
-        bbox=dict(boxstyle="round,pad=0.22", facecolor="white", edgecolor="0.85", alpha=0.95),
+        bbox=dict(boxstyle="round,pad=0.24", facecolor="white", edgecolor="#D9D5CB", alpha=0.98),
     )
 
 
@@ -520,15 +527,11 @@ def plot_family_metric_grid(
     xaxis: str,
     y_limits: tuple[float, float],
 ):
-    set_pub_style(grid=True, base_size=8)
-    plt.rcParams["axes.grid"] = True
-    plt.rcParams["grid.alpha"] = 0.18
-    plt.rcParams["grid.linestyle"] = "--"
+    _set_exp03_plot_style(grid=True)
 
     n_rows = len(families)
-    fig_w = FULL_W / 2.0 if len(families) > 1 else COL_W
-    fig_h = n_rows * (H_COL + 0.10) + 0.52
-    fig = plt.figure(figsize=(fig_w, fig_h), constrained_layout=True)
+    figsize = dual_panel_size() if n_rows == 1 else grid_size(n_rows)
+    fig = plt.figure(figsize=figsize, constrained_layout=True)
     gs = fig.add_gridspec(n_rows + 1, 1, height_ratios=[1.0] * n_rows + [0.16])
     axs = []
     for r, family in enumerate(families):
@@ -555,8 +558,8 @@ def plot_family_metric_grid(
     legend_ax = fig.add_subplot(gs[-1, 0])
     legend_ax.axis("off")
     handles = [
-        mlines.Line2D([], [], color=COLORS["ID"], lw=1.9, label="VQE + ID"),
-        mlines.Line2D([], [], color=COLORS["FD"], lw=1.7, ls="--", label="VQE + BD"),
+        mlines.Line2D([], [], color=COLORS["ID"], lw=2.2, label="VQE + ID"),
+        mlines.Line2D([], [], color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD"),
     ]
     ncol = 2
     if xaxis == "budget":
@@ -572,18 +575,15 @@ def plot_family_metric_grid(
         handles=handles,
         loc="center",
         ncol=ncol,
-        frameon=True,
+        frameon=False,
         fancybox=False,
-        framealpha=0.94,
-        facecolor="white",
-        edgecolor="0.85",
         borderpad=0.35,
         columnspacing=1.2,
         handlelength=1.8,
         handletextpad=0.6,
     )
 
-    _savefig(fig, path)
+    save_figure(fig, path)
     plt.close(fig)
 
 

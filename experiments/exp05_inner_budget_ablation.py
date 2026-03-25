@@ -68,6 +68,7 @@ from typing import Dict, List
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+from plot_style import FIG_H, FIG_W, apply_thesis_axes_style, dual_panel_size, save_figure, use_thesis_style
 
 from paramham.experiment_defaults import (
     CANONICAL_SETUP,
@@ -82,7 +83,6 @@ from paramham.families import Family1D
 from paramham.io import parse_int_list
 from paramham.maxcut import build_cut_mask, build_ZZ_edges
 from paramham.maxcut import precompute_z as precompute_z_big_endian
-from paramham.plotting import COL_W, FULL_W, H_COL, _savefig, set_pub_style
 from paramham.seeds import to_uint_seed
 from paramham.simulator import vqe_state
 from paramham.spsa import spsa_minimize
@@ -90,6 +90,11 @@ from paramham.spsa import spsa_minimize
 # ==============================================================================
 # 1) Experiment-specific plotting
 # ==============================================================================
+
+
+def _set_exp05_plot_style(grid: bool = False):
+    use_thesis_style()
+    plt.rcParams["axes.grid"] = bool(grid)
 
 
 def _cache_default_dir(out: Path) -> Path:
@@ -156,8 +161,8 @@ def plot_inner_budget_heatmap(
     No titles; includes axis labels and colorbars.
     Fix: panel (b) no longer unreadable (auto text color + better colormap).
     """
-    set_pub_style(grid=False, base_size=8)
-    fig, axs = plt.subplots(1, 2, figsize=(FULL_W, H_COL + 0.10), constrained_layout=True)
+    _set_exp05_plot_style(grid=False)
+    fig, axs = plt.subplots(1, 2, figsize=dual_panel_size(), constrained_layout=True)
 
     im0 = _draw_auc_gain_heatmap(axs[0], inner_iters_list, restarts_list, auc_gain_mean)
     cb0 = fig.colorbar(im0, ax=axs[0], fraction=0.046, pad=0.04)
@@ -167,11 +172,7 @@ def plot_inner_budget_heatmap(
     cb1 = fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04)
     cb1.set_label("Win rate (dAUC>0)")
 
-    # panel labels (small, unobtrusive)
-    axs[0].text(0.02, 0.98, "(A)", transform=axs[0].transAxes, ha="left", va="top", fontweight="bold")
-    axs[1].text(0.02, 0.98, "(B)", transform=axs[1].transAxes, ha="left", va="top", fontweight="bold")
-
-    _savefig(fig, path)
+    save_figure(fig, path)
     plt.close(fig)
 
 
@@ -182,7 +183,7 @@ def _draw_auc_gain_heatmap(ax, inner_iters_list: List[int], restarts_list: List[
     im = ax.imshow(
         auc_gain_mean,
         origin="lower",
-        aspect="auto",
+        aspect="equal",
         cmap=cmap,
         vmin=-vmax,
         vmax=+vmax,
@@ -194,6 +195,7 @@ def _draw_auc_gain_heatmap(ax, inner_iters_list: List[int], restarts_list: List[
     ax.set_xticklabels([str(x) for x in inner_iters_list])
     ax.set_yticks(np.arange(len(restarts_list)))
     ax.set_yticklabels([str(r) for r in restarts_list])
+    apply_thesis_axes_style(ax, grid=False)
 
     norm = mpl.colors.Normalize(vmin=-vmax, vmax=+vmax)
     for iy in range(len(restarts_list)):
@@ -213,7 +215,7 @@ def _draw_win_rate_heatmap(ax, inner_iters_list: List[int], restarts_list: List[
     im = ax.imshow(
         win_rate,
         origin="lower",
-        aspect="auto",
+        aspect="equal",
         cmap=cmap,
         norm=norm,
         interpolation="nearest",
@@ -224,6 +226,7 @@ def _draw_win_rate_heatmap(ax, inner_iters_list: List[int], restarts_list: List[
     ax.set_xticklabels([str(x) for x in inner_iters_list])
     ax.set_yticks(np.arange(len(restarts_list)))
     ax.set_yticklabels([str(r) for r in restarts_list])
+    apply_thesis_axes_style(ax, grid=False)
 
     for iy in range(len(restarts_list)):
         for ix in range(len(inner_iters_list)):
@@ -237,22 +240,22 @@ def _draw_win_rate_heatmap(ax, inner_iters_list: List[int], restarts_list: List[
 
 
 def plot_auc_gain_heatmap(path: Path, inner_iters_list: List[int], restarts_list: List[int], auc_gain_mean: np.ndarray):
-    set_pub_style(grid=False, base_size=8)
-    fig, ax = plt.subplots(1, 1, figsize=(COL_W, H_COL + 0.10), constrained_layout=True)
+    _set_exp05_plot_style(grid=False)
+    fig, ax = plt.subplots(1, 1, figsize=(FIG_W, FIG_H), constrained_layout=True)
     im = _draw_auc_gain_heatmap(ax, inner_iters_list, restarts_list, auc_gain_mean)
     cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cb.set_label(r"$\Delta \mathrm{AUC}_B$  (ID $-$ BD)")
-    _savefig(fig, path)
+    save_figure(fig, path)
     plt.close(fig)
 
 
 def plot_win_rate_heatmap(path: Path, inner_iters_list: List[int], restarts_list: List[int], win_rate: np.ndarray):
-    set_pub_style(grid=False, base_size=8)
-    fig, ax = plt.subplots(1, 1, figsize=(COL_W, H_COL + 0.10), constrained_layout=True)
+    _set_exp05_plot_style(grid=False)
+    fig, ax = plt.subplots(1, 1, figsize=(FIG_W, FIG_H), constrained_layout=True)
     im = _draw_win_rate_heatmap(ax, inner_iters_list, restarts_list, win_rate)
     cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cb.set_label("Win rate (dAUC>0)")
-    _savefig(fig, path)
+    save_figure(fig, path)
     plt.close(fig)
 
 

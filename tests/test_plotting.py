@@ -11,6 +11,7 @@ from paramham.plotting import (
     H_COL,
     METHOD_CMAPS,
     _savefig,
+    apply_reference_axes_style,
     set_pub_style,
 )
 
@@ -51,6 +52,14 @@ def test_set_pub_style_base_size():
     assert mpl.rcParams["axes.labelsize"] == 11
 
 
+def test_set_pub_style_reference_theme():
+    set_pub_style(grid=True, base_size=9, theme="reference")
+    assert mpl.rcParams["axes.spines.top"] is True
+    assert mpl.rcParams["axes.spines.right"] is True
+    assert mpl.rcParams["legend.frameon"] is False
+    assert mpl.rcParams["grid.linestyle"] == "-"
+
+
 def test_savefig(tmp_path):
     import matplotlib.pyplot as plt
 
@@ -67,3 +76,13 @@ def test_method_cmaps_exist():
     assert "ID" in METHOD_CMAPS
     assert "FD" in METHOD_CMAPS
     assert ADVANTAGE_CMAP is not None
+
+
+def test_apply_reference_axes_style():
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    apply_reference_axes_style(ax)
+    assert ax.spines["top"].get_visible() is True
+    assert round(ax.spines["left"].get_linewidth(), 2) == 1.15
+    plt.close(fig)

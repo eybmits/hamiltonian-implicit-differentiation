@@ -18,6 +18,16 @@ Shared final defaults from `paramham.experiment_defaults`:
 
 Sweep experiments apply these defaults only to non-swept parameters.
 
+## Publication Plot Standard
+
+All experiment renderers share the fixed-width thesis plot helper in `experiments/plot_style.py`.
+
+- final PDF width: `5.7295 in`
+- no `bbox_inches='tight'` for publication PDFs
+- Exp 2 defines the canonical typography and panel sizing
+- heatmaps use square cells where appropriate
+- square sixpack collages use `set_box_aspect(1.0)`
+
 ## Public Experiments
 
 ### Exp 1: Core ID vs FD Demo
@@ -25,7 +35,7 @@ Sweep experiments apply these defaults only to non-swept parameters.
 - Script: `experiments/exp01_id_vs_fd_core_demo.py`
 - Standard command: `make exp01`
 - Output: `output/exp01`
-- Notes: renders `linear`, `quadratic`, `periodic`, plus the spectrum-compare collage
+- Notes: renders `linear`, `quadratic`, `periodic`, the family story-grid collages, and the spectrum-compare collage
 
 ### Exp 2: Systematic Cost Advantage
 
@@ -51,24 +61,28 @@ Sweep experiments apply these defaults only to non-swept parameters.
 - Script: `experiments/exp05_inner_budget_ablation.py`
 - Standard command: `make exp05`
 - Output: `output/exp05`
+- Notes: final heatmaps are rendered with square cells
 
 ### Exp 6: Graph-Class Regime Heatmap
 
 - Script: `experiments/exp06_graphclass_regime_heatmap.py`
 - Standard command: `make exp06`
 - Output: `output/exp06`
+- Notes: the graph-class heatmap grid uses equal-aspect cells
 
 ### Exp 7: Multi-Dimensional Outer Control
 
 - Script: `experiments/exp07_multi_dimensional_outer_control.py`
 - Standard command: `make exp07`
 - Output: `output/exp07`
+- Notes: includes the square-panel sixpack collage
 
 ### Exp 8: VQE vs QAOA Readout Bridge
 
 - Script: `experiments/exp08_vqe_vs_qaoa_readout_bridge.py`
 - Standard command: `make exp08`
 - Output: `output/exp08`
+- Notes: includes the square-panel sixpack collage and VQE-vs-QAOA pair-scatter figures
 
 ## Internal Helpers
 

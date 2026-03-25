@@ -15,6 +15,7 @@ import matplotlib as mpl
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import numpy as np
+from plot_style import FIG_H, FIG_W, apply_thesis_axes_style, newfig, save_figure, scaled_height, use_thesis_style
 
 from paramham.experiment_defaults import (
     CANONICAL_SETUP,
@@ -29,10 +30,30 @@ from paramham.io import parse_int_list, parse_str_list, write_csv
 from paramham.maxcut import build_cut_mask, build_ZZ_edges, classical_Jstar
 from paramham.maxcut import precompute_z as precompute_z_big_endian
 from paramham.metrics import mean_stderr, step_interp
-from paramham.plotting import COLORS, FULL_W, H_COL, _savefig, add_panel_legend, set_pub_style
+from paramham.plotting import (
+    COLORS,
+    FULL_W,
+    H_COL,
+    add_panel_legend,
+)
 from paramham.seeds import to_uint_seed
 from paramham.simulator import vqe_state
 from paramham.spsa import spsa_minimize
+
+
+def set_exp02_plot_style():
+    """Typography/size profile for Experiment 2, matched to thesis text size."""
+
+    use_thesis_style()
+    mpl.rcParams.update(
+        {
+            "axes.grid": True,
+            "grid.alpha": 0.7,
+            "grid.linestyle": "-",
+            "grid.linewidth": 0.75,
+            "grid.color": "#D7D7D7",
+        }
+    )
 
 
 def stderr(x: np.ndarray) -> float:
@@ -447,10 +468,19 @@ def _draw_budget_panel(
     x = C.budgets
     ax.axhline(1.0, color=COLORS["REFERENCE"], lw=1.0, ls=":", alpha=0.85, zorder=1, label="_nolegend_")
 
-    ax.fill_between(x, C.mean_fd - C.se_fd, C.mean_fd + C.se_fd, color=COLORS["FD"], alpha=0.16, linewidth=0, zorder=1)
+    ax.fill_between(x, C.mean_fd - C.se_fd, C.mean_fd + C.se_fd, color=COLORS["FD"], alpha=0.14, linewidth=0, zorder=1)
     ax.fill_between(x, C.mean_id - C.se_id, C.mean_id + C.se_id, color=COLORS["ID"], alpha=0.18, linewidth=0, zorder=2)
-    ax.plot(x, C.mean_fd, color=COLORS["FD"], lw=1.7, ls="--", label="VQE + FD", zorder=3)
-    ax.plot(x, C.mean_id, color=COLORS["ID"], lw=1.9, ls="-", label="VQE + ID", zorder=4)
+    ax.plot(
+        x,
+        C.mean_fd,
+        color=COLORS["FD"],
+        lw=2.0,
+        ls=(0, (4, 2)),
+        label="VQE + FD",
+        zorder=3,
+        solid_capstyle="round",
+    )
+    ax.plot(x, C.mean_id, color=COLORS["ID"], lw=2.2, ls="-", label="VQE + ID", zorder=4, solid_capstyle="round")
 
     if C.id_p20:
         x_id, y_id = C.id_p20
@@ -471,9 +501,8 @@ def _draw_budget_panel(
                 xytext=(0, 10),
                 textcoords="offset points",
                 color=COLORS["ID"],
-                fontsize=7,
+                fontsize=10,
                 ha="center",
-                fontweight="bold",
             )
     if C.fd_p20:
         x_fd, y_fd = C.fd_p20
@@ -495,11 +524,11 @@ def _draw_budget_panel(
                     xytext=(0, -12),
                     textcoords="offset points",
                     color=COLORS["FD"],
-                    fontsize=7,
+                    fontsize=10,
                     ha="center",
-                    fontweight="bold",
                 )
 
+    apply_thesis_axes_style(ax)
     ax.set_xlim(0, C.budget_used)
     ax.set_ylim(*y_limits)
     if show_xlabel:
@@ -515,33 +544,31 @@ def _draw_budget_panel(
             transform=ax.transAxes,
             ha="left",
             va="top",
-            fontsize=8,
+            fontsize=10,
             color=COLORS["MUTED"],
-            bbox=dict(boxstyle="round,pad=0.22", facecolor="white", edgecolor="0.85", alpha=0.95),
+            bbox=dict(boxstyle="round,pad=0.24", facecolor="white", edgecolor="#D9D5CB", alpha=0.98),
         )
 
     if column_title is not None:
         ax.set_title(column_title, pad=8)
 
     if panel_legend:
-        add_panel_legend(ax, placement="below", ncol=2, fontsize=8)
+        add_panel_legend(ax, placement="below", ncol=2, fontsize=10, frameon=False)
 
 
 def plot_budget_curves(path, curves_by_shots, shots_list, family_name: str | None = None, y_limits=None):
-    set_pub_style(grid=True, base_size=8)
-    mpl.rcParams["axes.grid"] = True
-    mpl.rcParams["grid.alpha"] = 0.18
-    mpl.rcParams["grid.linestyle"] = "--"
+    set_exp02_plot_style()
 
     all_curves = [curves_by_shots[shots] for shots in shots_list]
     if y_limits is None:
         y_limits = interesting_y_limits(all_curves)
 
     if len(shots_list) == 2:
-        fig, axs = plt.subplots(1, 2, figsize=(FULL_W, H_COL + 0.40), constrained_layout=True, sharey=True)
+        fig_h = scaled_height(FULL_W, H_COL + 0.55)
+        fig, axs = plt.subplots(1, 2, figsize=(FIG_W, fig_h), constrained_layout=True, sharey=True)
         axes = list(axs)
     else:
-        fig, ax = plt.subplots(1, 1, figsize=(FULL_W / 2.0, H_COL + 0.30), constrained_layout=True)
+        fig, ax = newfig(height=FIG_H)
         axes = [ax]
 
     for ax, shots in zip(axes, shots_list):
@@ -557,20 +584,18 @@ def plot_budget_curves(path, curves_by_shots, shots_list, family_name: str | Non
             panel_legend=True,
         )
 
-    _savefig(fig, path)
+    save_figure(fig, path)
     plt.close(fig)
 
 
 def plot_budget_family_grid(path: Path, curves_by_family, families, shots_list, *, y_limits: tuple[float, float]):
-    set_pub_style(grid=True, base_size=8)
-    mpl.rcParams["axes.grid"] = True
-    mpl.rcParams["grid.alpha"] = 0.18
-    mpl.rcParams["grid.linestyle"] = "--"
+    set_exp02_plot_style()
 
     n_rows = len(families)
     n_cols = len(shots_list)
-    fig_h = n_rows * (H_COL + 0.10) + 0.55
-    fig = plt.figure(figsize=(FULL_W, fig_h), constrained_layout=True)
+    legacy_fig_h = n_rows * (H_COL + 0.14) + 0.62
+    fig_h = scaled_height(FULL_W, legacy_fig_h)
+    fig = plt.figure(figsize=(FIG_W, fig_h), constrained_layout=True)
     gs = fig.add_gridspec(n_rows + 1, n_cols, height_ratios=[1.0] * n_rows + [0.17])
     axs = np.empty((n_rows, n_cols), dtype=object)
 
@@ -607,19 +632,17 @@ def plot_budget_family_grid(path: Path, curves_by_family, families, shots_list, 
         handles=handles,
         loc="center",
         ncol=3,
-        frameon=True,
+        frameon=False,
         fancybox=False,
-        framealpha=0.94,
-        facecolor="white",
-        edgecolor="0.85",
         borderpad=0.35,
         columnspacing=1.2,
         handlelength=1.8,
         handletextpad=0.6,
+        fontsize=10,
     )
     legend.set_zorder(20)
 
-    _savefig(fig, path)
+    save_figure(fig, path)
     plt.close(fig)
 
 
