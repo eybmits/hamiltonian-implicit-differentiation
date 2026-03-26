@@ -54,6 +54,22 @@ def _run_help(script_name: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _run_reproduction_runner(*args: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    src_path = str(REPO_ROOT / "src")
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{src_path}{os.pathsep}{existing}" if existing else src_path
+    return subprocess.run(
+        [sys.executable, "-m", "paramham.reproduce", *args],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+        check=False,
+    )
+
+
 @pytest.mark.parametrize("script_name", PUBLIC_SCRIPTS)
 def test_public_experiment_scripts_expose_help(script_name: str):
     proc = _run_help(script_name)
@@ -137,6 +153,29 @@ def test_exp08_bridge_help_lists_cache_and_collage_flags():
     assert "--no_collage_plot" in proc.stdout
 
 
+def test_reproduction_runner_exposes_help():
+    proc = _run_reproduction_runner("--help")
+    assert proc.returncode == 0, proc.stderr
+    assert "Canonical reproduction runner" in proc.stdout
+    assert "all" in proc.stdout
+    assert "rerender" in proc.stdout
+
+
+def test_reproduction_runner_dry_run_all_lists_experiment_commands():
+    proc = _run_reproduction_runner("all", "--dry-run")
+    assert proc.returncode == 0, proc.stderr
+    assert "exp01_id_vs_fd_core_demo.py" in proc.stdout
+    assert "exp08_vqe_vs_qaoa_readout_bridge.py" in proc.stdout
+    assert "output/cache/exp08" in proc.stdout
+
+
+def test_reproduction_runner_dry_run_rerender_includes_render_only():
+    proc = _run_reproduction_runner("rerender", "--dry-run")
+    assert proc.returncode == 0, proc.stderr
+    assert "--render_only" in proc.stdout
+    assert "output/cache/exp03/budget" in proc.stdout
+
+
 def test_makefile_supports_final_dry_run():
     proc = subprocess.run(
         ["make", "-n", "final"],
@@ -147,5 +186,4 @@ def test_makefile_supports_final_dry_run():
         check=False,
     )
     assert proc.returncode == 0, proc.stderr
-    assert "exp01_id_vs_fd_core_demo.py" in proc.stdout
-    assert "exp08_vqe_vs_qaoa_readout_bridge.py" in proc.stdout
+    assert "-m paramham.reproduce final" in proc.stdout

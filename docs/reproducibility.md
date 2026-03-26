@@ -13,31 +13,40 @@ make test
 
 ## Standard Reproduction Interface
 
-The repository-standard interface is the `Makefile`.
+The repository-standard interface is the `paramham-reproduce` runner. The `Makefile`
+is a thin wrapper around the same target registry.
 
-Per-experiment runs:
-
-```bash
-make exp01
-make exp02
-make exp03
-make exp04
-make exp05
-make exp06
-make exp07
-make exp08
-```
-
-Full suite:
+Canonical one-command rerun:
 
 ```bash
-make final
+paramham-reproduce all
 ```
 
 Cache-backed rerender:
 
 ```bash
+paramham-reproduce rerender
+```
+
+Per-experiment runs:
+
+```bash
+paramham-reproduce exp01
+paramham-reproduce exp02
+paramham-reproduce exp03
+paramham-reproduce exp04
+paramham-reproduce exp05
+paramham-reproduce exp06
+paramham-reproduce exp07
+paramham-reproduce exp08
+```
+
+Equivalent `make` wrappers:
+
+```bash
+make final
 make rerender
+make exp01
 ```
 
 ## Output Layout

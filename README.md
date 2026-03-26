@@ -7,7 +7,7 @@ This repository is intentionally trimmed to the final paper-facing experiment su
 - exactly **8 public experiments**
 - one clean output tree under `output/exp01` to `output/exp08`
 - cache-backed rerender support under `output/cache`
-- a single standard runner interface through `make`
+- a single standard runner interface through `paramham-reproduce`
 
 ## Installation
 
@@ -21,13 +21,14 @@ Run from the repository root:
 
 ```bash
 make test
-make exp01
-make exp02
+paramham-reproduce all
+paramham-reproduce rerender
 make final
-make rerender
 ```
 
-The standard environment is handled by the `Makefile` (`PYTHONPATH=src`, `MPLCONFIGDIR=/tmp/mpl`).
+`paramham-reproduce` is the canonical suite runner. The `Makefile` is now a thin wrapper around the same target registry, so `make final` and `make exp03` stay in sync with the Python runner automatically.
+
+The standard environment is handled for both interfaces (`PYTHONPATH=src`, `MPLCONFIGDIR=/tmp/mpl`).
 
 ## Publication Plot Standard
 

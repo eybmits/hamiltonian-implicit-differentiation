@@ -1,7 +1,7 @@
 # Appendix Reproduction Note
 
 The publication-facing repository exposes exactly eight public experiments and a
-single standard runner interface through `make`.
+single standard runner interface through `paramham-reproduce`.
 
 ## Environment
 
@@ -22,28 +22,35 @@ make test
 
 ## Canonical Reproduction Commands
 
-Per experiment:
-
-```bash
-make exp01
-make exp02
-make exp03
-make exp04
-make exp05
-make exp06
-make exp07
-make exp08
-```
-
 Full final suite:
 
 ```bash
-make final
+paramham-reproduce all
 ```
 
 Cache-backed rerender after style-only changes:
 
 ```bash
+paramham-reproduce rerender
+```
+
+Per-experiment targets remain available when needed:
+
+```bash
+paramham-reproduce exp01
+paramham-reproduce exp02
+paramham-reproduce exp03
+paramham-reproduce exp04
+paramham-reproduce exp05
+paramham-reproduce exp06
+paramham-reproduce exp07
+paramham-reproduce exp08
+```
+
+The `Makefile` remains available as a thin wrapper around the same target registry:
+
+```bash
+make final
 make rerender
 ```
 
