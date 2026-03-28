@@ -166,7 +166,7 @@ def plot_inner_budget_heatmap(
 
     im0 = _draw_auc_gain_heatmap(axs[0], inner_iters_list, restarts_list, auc_gain_mean)
     cb0 = fig.colorbar(im0, ax=axs[0], fraction=0.046, pad=0.04)
-    cb0.set_label(r"$\Delta \mathrm{AUC}_B$  (ID $-$ BD)")
+    cb0.set_label(r"$\Delta \mathrm{AUC}_B$  (ID $-$ FD)")
 
     im1 = _draw_win_rate_heatmap(axs[1], inner_iters_list, restarts_list, win_rate)
     cb1 = fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04)
@@ -244,7 +244,7 @@ def plot_auc_gain_heatmap(path: Path, inner_iters_list: List[int], restarts_list
     fig, ax = plt.subplots(1, 1, figsize=(FIG_W, FIG_H), constrained_layout=True)
     im = _draw_auc_gain_heatmap(ax, inner_iters_list, restarts_list, auc_gain_mean)
     cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cb.set_label(r"$\Delta \mathrm{AUC}_B$  (ID $-$ BD)")
+    cb.set_label(r"$\Delta \mathrm{AUC}_B$  (ID $-$ FD)")
     save_figure(fig, path)
     plt.close(fig)
 
@@ -852,7 +852,7 @@ def main():
         summary_rows,
         caption=(
             "Experiment 5 inner-budget ablation (periodic family by default). "
-            "Each cell reports mean+-s.e.m. of dAUC_B = AUC_ID - AUC_BB-FD "
+            "Each cell reports mean+-s.e.m. of dAUC_B = AUC_ID - AUC_FD "
             "at fixed evaluation budget B, over paired random instances."
         ),
         label="tab:exp5_inner_budget",

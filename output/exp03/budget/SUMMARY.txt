@@ -1,16 +1,16 @@
 Experiment 3 (Readout realism) | families=linear,quadratic,periodic | n=12 | N_total=60 | S_readout=128 | xaxis=budget | metric=both
 budget_evals=2000.0 | graph_seed=7
-linear | Best-of-S final / J*: ID=0.9508+/-0.0072 | BD=0.9330+/-0.0062
-linear | Mode final / J*: ID=0.9023+/-0.0100 | BD=0.8797+/-0.0113
-linear | Best-of-S AUC (steps): ID=0.9337+/-0.0058 | BD=0.9169+/-0.0068
-linear | Mode AUC (steps): ID=0.8687+/-0.0063 | BD=0.8220+/-0.0088
-quadratic | Best-of-S final / J*: ID=0.9415+/-0.0134 | BD=0.9190+/-0.0155
-quadratic | Mode final / J*: ID=0.8888+/-0.0152 | BD=0.8315+/-0.0158
-quadratic | Best-of-S AUC (steps): ID=0.9209+/-0.0127 | BD=0.8994+/-0.0156
-quadratic | Mode AUC (steps): ID=0.8472+/-0.0110 | BD=0.7802+/-0.0131
-periodic | Best-of-S final / J*: ID=0.9487+/-0.0095 | BD=0.9450+/-0.0100
-periodic | Mode final / J*: ID=0.8979+/-0.0129 | BD=0.8634+/-0.0185
-periodic | Best-of-S AUC (steps): ID=0.9419+/-0.0095 | BD=0.9316+/-0.0095
-periodic | Mode AUC (steps): ID=0.8728+/-0.0082 | BD=0.8283+/-0.0106
+linear | Best-of-S final / J*: ID=0.9508+/-0.0072 | FD=0.9330+/-0.0062
+linear | Mode final / J*: ID=0.9023+/-0.0100 | FD=0.8797+/-0.0113
+linear | Best-of-S AUC (steps): ID=0.9337+/-0.0058 | FD=0.9169+/-0.0068
+linear | Mode AUC (steps): ID=0.8687+/-0.0063 | FD=0.8220+/-0.0088
+quadratic | Best-of-S final / J*: ID=0.9415+/-0.0134 | FD=0.9190+/-0.0155
+quadratic | Mode final / J*: ID=0.8888+/-0.0152 | FD=0.8315+/-0.0158
+quadratic | Best-of-S AUC (steps): ID=0.9209+/-0.0127 | FD=0.8994+/-0.0156
+quadratic | Mode AUC (steps): ID=0.8472+/-0.0110 | FD=0.7802+/-0.0131
+periodic | Best-of-S final / J*: ID=0.9487+/-0.0095 | FD=0.9450+/-0.0100
+periodic | Mode final / J*: ID=0.8979+/-0.0129 | FD=0.8634+/-0.0185
+periodic | Best-of-S AUC (steps): ID=0.9419+/-0.0095 | FD=0.9316+/-0.0095
+periodic | Mode AUC (steps): ID=0.8728+/-0.0082 | FD=0.8283+/-0.0106
 Figure: fig3_readout_best_mode_family_grid_linear-quadratic-periodic_n12_S128_seed01_N60_xBudget.pdf
 Runs: runs3_readout_metrics.csv

@@ -20,8 +20,8 @@ What we simulate:
 
 We compare:
   - ID        : correlator-reuse implicit differentiation (CR-ImpDiff)
-  - BD        : black-box finite difference on the VALUE function F(lambda) (requires re-solves at lambda+-c)
-                (Legend label requested: "VQE + BD")
+  - FD        : black-box finite difference on the VALUE function F(lambda) (requires re-solves at lambda+-c)
+                (Legend label: "VQE + FD")
 
 Minimal paper output:
   - One 2-panel figure (Best-of-S | Mode), for the periodic family (default), aggregated over instances
@@ -29,7 +29,7 @@ Minimal paper output:
 
 Key fairness choice (matches "fixed readout shots per outer step"):
   - We apply the readout budget S ONCE PER OUTER STEP for BOTH methods, at the *center* candidate state.
-    BD performs extra perturbed inner re-solves internally; we do not allocate extra readout shots to those
+    FD performs extra perturbed inner re-solves internally; we do not allocate extra readout shots to those
     perturbed solves, because the goal here is to compare "what solution do I get if I read out my current candidate
     each iteration with a fixed readout budget".
 
@@ -239,8 +239,8 @@ def _metric_summary_rows(rows: List[Dict[str, float]], family: str) -> list[dict
                 "metric": label,
                 "ID_mean": f"{idm:.6f}",
                 "ID_stderr": f"{ids:.6f}",
-                "BD_mean": f"{fdm:.6f}",
-                "BD_stderr": f"{fds:.6f}",
+                "FD_mean": f"{fdm:.6f}",
+                "FD_stderr": f"{fds:.6f}",
             }
         )
     return out
@@ -363,7 +363,7 @@ def plot_2panel_iters(path: Path, best_id: np.ndarray, best_fd: np.ndarray, mode
     ax = axs[0]
     ax.plot(t, mu_b_id, color=COLORS["ID"], lw=2.2, label="VQE + ID", solid_capstyle="round")
     ax.fill_between(t, mu_b_id - se_b_id, mu_b_id + se_b_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
-    ax.plot(t, mu_b_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD", solid_capstyle="round")
+    ax.plot(t, mu_b_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + FD", solid_capstyle="round")
     ax.fill_between(t, mu_b_fd - se_b_fd, mu_b_fd + se_b_fd, color=COLORS["FD"], alpha=0.14, linewidth=0)
     ax.set_xlabel(r"Outer iteration $t$")
     ax.set_ylabel(r"Best-of-$S$ / $J^*$")
@@ -372,7 +372,7 @@ def plot_2panel_iters(path: Path, best_id: np.ndarray, best_fd: np.ndarray, mode
     ax = axs[1]
     ax.plot(t, mu_m_id, color=COLORS["ID"], lw=2.2, label="VQE + ID", solid_capstyle="round")
     ax.fill_between(t, mu_m_id - se_m_id, mu_m_id + se_m_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
-    ax.plot(t, mu_m_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD", solid_capstyle="round")
+    ax.plot(t, mu_m_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + FD", solid_capstyle="round")
     ax.fill_between(t, mu_m_fd - se_m_fd, mu_m_fd + se_m_fd, color=COLORS["FD"], alpha=0.14, linewidth=0)
     ax.set_xlabel(r"Outer iteration $t$")
     ax.set_ylabel(r"Mode cut / $J^*$")
@@ -414,7 +414,7 @@ def plot_2panel_budget(
     ax = axs[0]
     ax.plot(b, mu_b_id, color=COLORS["ID"], lw=2.2, label="VQE + ID", solid_capstyle="round")
     ax.fill_between(b, mu_b_id - se_b_id, mu_b_id + se_b_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
-    ax.plot(b, mu_b_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD", solid_capstyle="round")
+    ax.plot(b, mu_b_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + FD", solid_capstyle="round")
     ax.fill_between(b, mu_b_fd - se_b_fd, mu_b_fd + se_b_fd, color=COLORS["FD"], alpha=0.14, linewidth=0)
     ax.set_xlabel("Energy evaluations")
     ax.set_ylabel(r"Best-of-$S$ / $J^*$")
@@ -423,7 +423,7 @@ def plot_2panel_budget(
     ax = axs[1]
     ax.plot(b, mu_m_id, color=COLORS["ID"], lw=2.2, label="VQE + ID", solid_capstyle="round")
     ax.fill_between(b, mu_m_id - se_m_id, mu_m_id + se_m_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
-    ax.plot(b, mu_m_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD", solid_capstyle="round")
+    ax.plot(b, mu_m_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + FD", solid_capstyle="round")
     ax.fill_between(b, mu_m_fd - se_m_fd, mu_m_fd + se_m_fd, color=COLORS["FD"], alpha=0.14, linewidth=0)
     ax.set_xlabel("Energy evaluations")
     ax.set_ylabel(r"Mode cut / $J^*$")
@@ -469,7 +469,7 @@ def _draw_family_metric_panel(
     ax.axhline(1.0, color=COLORS["REFERENCE"], lw=1.0, ls=":", alpha=0.85, zorder=1, label="_nolegend_")
     ax.fill_between(x, mu_fd - se_fd, mu_fd + se_fd, color=COLORS["FD"], alpha=0.14, linewidth=0, zorder=1)
     ax.fill_between(x, mu_id - se_id, mu_id + se_id, color=COLORS["ID"], alpha=0.18, linewidth=0, zorder=2)
-    ax.plot(x, mu_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD", zorder=3, solid_capstyle="round")
+    ax.plot(x, mu_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + FD", zorder=3, solid_capstyle="round")
     ax.plot(x, mu_id, color=COLORS["ID"], lw=2.2, ls="-", label="VQE + ID", zorder=4, solid_capstyle="round")
 
     if xaxis == "budget":
@@ -552,7 +552,7 @@ def plot_family_metric_grid(
 
     handles = [
         mlines.Line2D([], [], color=COLORS["ID"], lw=2.2, label="VQE + ID"),
-        mlines.Line2D([], [], color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD"),
+        mlines.Line2D([], [], color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + FD"),
     ]
     ncol = 2
     if xaxis == "budget":
@@ -560,7 +560,7 @@ def plot_family_metric_grid(
             [
                 mlines.Line2D([], [], color=COLORS["REFERENCE"], lw=1.0, ls=":", label=r"Reference $J^*/J^* = 1$"),
                 mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label=r"ID at $t=20$"),
-                mlines.Line2D([], [], color=COLORS["FD"], marker="s", ls="None", ms=5, label=r"BD at $t=20$"),
+                mlines.Line2D([], [], color=COLORS["FD"], marker="s", ls="None", ms=5, label=r"FD at $t=20$"),
             ]
         )
         ncol = 3
@@ -714,7 +714,7 @@ def plot_family_dual_metric_grid(
 
     handles = [
         mlines.Line2D([], [], color=COLORS["ID"], lw=2.2, label="VQE + ID"),
-        mlines.Line2D([], [], color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD"),
+        mlines.Line2D([], [], color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + FD"),
     ]
     ncol = 2
     if xaxis == "budget":
@@ -722,7 +722,7 @@ def plot_family_dual_metric_grid(
             [
                 mlines.Line2D([], [], color=COLORS["REFERENCE"], lw=1.0, ls=":", label=r"Reference $J^*/J^* = 1$"),
                 mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label=r"ID at $t=20$"),
-                mlines.Line2D([], [], color=COLORS["FD"], marker="s", ls="None", ms=5, label=r"BD at $t=20$"),
+                mlines.Line2D([], [], color=COLORS["FD"], marker="s", ls="None", ms=5, label=r"FD at $t=20$"),
             ]
         )
         ncol = 3
@@ -1270,13 +1270,13 @@ def main():
         f.write("% Auto-generated by exp03_readout_realism_best_mode.py\n")
         f.write("\\begin{tabular}{l l c c}\n")
         f.write("\\toprule\n")
-        f.write("Family & Metric & VQE+ID & VQE+BD\\\\\n")
+        f.write("Family & Metric & VQE+ID & VQE+FD\\\\\n")
         f.write("\\midrule\n")
         for row in summary_rows:
             f.write(
                 f"{row['family']} & {row['metric']} & "
                 f"{float(row['ID_mean']):.3f}$\\pm${float(row['ID_stderr']):.3f} & "
-                f"{float(row['BD_mean']):.3f}$\\pm${float(row['BD_stderr']):.3f}\\\\\n"
+                f"{float(row['FD_mean']):.3f}$\\pm${float(row['FD_stderr']):.3f}\\\\\n"
             )
         f.write("\\bottomrule\n")
         f.write("\\end{tabular}\n")
@@ -1292,7 +1292,7 @@ def main():
             f.write(
                 f"{row['family']} | {row['metric']}: "
                 f"ID={float(row['ID_mean']):.4f}+/-{float(row['ID_stderr']):.4f} | "
-                f"BD={float(row['BD_mean']):.4f}+/-{float(row['BD_stderr']):.4f}\n"
+                f"FD={float(row['FD_mean']):.4f}+/-{float(row['FD_stderr']):.4f}\n"
             )
         f.write(f"Figure: {fig_path.name}\n")
         f.write(f"Runs: {csv_path.name}\n")

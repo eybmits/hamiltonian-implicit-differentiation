@@ -1,4 +1,4 @@
-family,metric,ID_mean,ID_stderr,BD_mean,BD_stderr
+family,metric,ID_mean,ID_stderr,FD_mean,FD_stderr
 linear,Best-of-S final / J*,0.950812,0.007233,0.933022,0.006239
 linear,Mode final / J*,0.902304,0.010034,0.879705,0.011287
 linear,Best-of-S AUC (steps),0.933696,0.005828,0.916866,0.006797

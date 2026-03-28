@@ -4,14 +4,14 @@
 ====================================
 
 Experiment 6: (n, p) heatmaps showing where Implicit Differentiation (ID)
-beats Black-Box Finite Differences (BB-FD) under a matched *energy-evaluation*
+beats finite differences (FD) under a matched *energy-evaluation*
 budget, across multiple graph classes.
 
 What this is meant to show (ICML-friendly story)
 ------------------------------------------------
 - In bilevel Max-Cut we optimize F(λ) = max_ϑ J(ϑ, λ).
 - A naive outer hypergradient estimate via value probing / finite differences
-  (BB-FD) needs *two additional* evaluations of F(λ±c). In a true bilevel
+  (FD) needs *two additional* evaluations of F(λ±c). In a true bilevel
   setting, that implies *two additional inner solves* per outer step.
 - ID (correlator reuse / envelope) avoids those extra probes and therefore
   makes better progress for the same evaluation budget.
@@ -22,7 +22,7 @@ summarizes the advantage in a heatmap.
 
 Primary metric
 --------------
-ΔAUC_B = AUC_B(ID) - AUC_B(BB-FD)
+ΔAUC_B = AUC_B(ID) - AUC_B(FD)
 where AUC_B is the normalized area under the best-so-far curve of J/J* vs.
 energy-evaluation budget B.
 
@@ -225,7 +225,7 @@ def vqe_energy(n: int, cut_mask: np.ndarray, w: np.ndarray, params: np.ndarray, 
 
 
 # ==============================================================================
-# Outer loops (ID vs BB-FD), budgeted
+# Outer loops (ID vs FD), budgeted
 # ==============================================================================
 
 
@@ -546,7 +546,7 @@ def plot_heatmaps(
     # shared colorbar (attach only to used panels, not the hidden axes)
     if last_im is not None:
         cbar = fig.colorbar(last_im, ax=panel_axes, shrink=0.92, pad=0.02)
-        cbar.set_label(r"$\Delta\,\mathrm{AUC}_B$ (ID $-$ BB-FD)")
+        cbar.set_label(r"$\Delta\,\mathrm{AUC}_B$ (ID $-$ FD)")
 
     save_figure(fig, path)
     plt.close(fig)
@@ -806,7 +806,7 @@ def main():
 
     # summary text
     lines = []
-    lines.append("Experiment 6: Heatmap over (n,p) showing ΔAUC_B(ID - BB-FD)")
+    lines.append("Experiment 6: Heatmap over (n,p) showing ΔAUC_B(ID - FD)")
     lines.append(f"Graph classes: {', '.join(graph_classes)}")
     lines.append(f"n_list: {n_list}")
     lines.append(f"p_list: {p_list}")
@@ -820,7 +820,7 @@ def main():
     lines.append(f"FD step: fd_c_frac={a.fd_c_frac}")
     lines.append("")
     lines.append("Legend: cell text shows")
-    lines.append("  line1: mean ΔAUC_B (ID - BB-FD)")
+    lines.append("  line1: mean ΔAUC_B (ID - FD)")
     lines.append("  line2: win-rate % (fraction seeds with ΔAUC_B>0)")
     lines.append("")
     lines.append("Saved outputs:")
