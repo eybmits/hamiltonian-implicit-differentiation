@@ -88,12 +88,8 @@ Each experiment output folder contains:
 ## Documentation
 
 - [Experiment Reference](docs/experiments.md)
-- [Plot Style Standard](docs/plot_style.md)
 - [Reproducibility Guide](docs/reproducibility.md)
-- [Output Manifest](output/README.md)
-- [Contributing](CONTRIBUTING.md)
-- [Release Process](RELEASING.md)
-- [Changelog](CHANGELOG.md)
+- [Appendix Reproduction Note](docs/appendix_reproduction.md)
 
 ## License
 

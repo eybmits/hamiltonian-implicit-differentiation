@@ -2,7 +2,7 @@ Experiment 3 — Readout Realism
 
 Contents:
 - iters/: plots and tables against outer iteration count
-- budget/: plots and tables against cumulative energy evaluations
+- budget/: plots and tables against cumulative energy evaluations, with the canonical combined best-of-S/mode family grid
 
 Canonical defaults:
 - families=linear,quadratic,periodic
@@ -14,6 +14,10 @@ Canonical defaults:
 - readout_shots=128
 - seed0=1
 - num_instances=20 per family
+
+Standard figure convention:
+- iters/: standard best-of-S family grid
+- budget/: canonical best-of-S versus mode double figure
 
 Each subdirectory contains the final PDFs, CSV/TEX tables, and its own
 SUMMARY.txt for the specific x-axis choice.

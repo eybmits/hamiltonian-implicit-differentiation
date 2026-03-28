@@ -36,7 +36,6 @@ dependencies = [
 Homepage = "https://github.com/eybmits/parameterized-hamiltonians-id"
 Repository = "https://github.com/eybmits/parameterized-hamiltonians-id"
 Issues = "https://github.com/eybmits/parameterized-hamiltonians-id/issues"
-Changelog = "https://github.com/eybmits/parameterized-hamiltonians-id/blob/main/CHANGELOG.md"
 
 [project.scripts]
 paramham-reproduce = "paramham.reproduce:main"

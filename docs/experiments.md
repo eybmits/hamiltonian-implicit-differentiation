@@ -49,6 +49,7 @@ All experiment renderers share the fixed-width thesis plot helper in `experiment
 - Script: `experiments/exp03_readout_realism_best_mode.py`
 - Standard command: `make exp03`
 - Output: `output/exp03/iters` and `output/exp03/budget`
+- Notes: the standard `iters` render keeps the `bestS` family grid; the canonical budget-axis paper figure is the combined best-of-`S`/mode family grid
 
 ### Exp 4: Robustness Sweep
 

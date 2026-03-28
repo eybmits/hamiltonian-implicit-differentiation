@@ -1,4 +1,4 @@
-Experiment 3 (Readout realism) | families=linear,quadratic,periodic | n=12 | N_total=60 | S_readout=128 | xaxis=budget | metric=bestS
+Experiment 3 (Readout realism) | families=linear,quadratic,periodic | n=12 | N_total=60 | S_readout=128 | xaxis=budget | metric=both
 budget_evals=2000.0 | graph_seed=7
 linear | Best-of-S final / J*: ID=0.9508+/-0.0072 | BD=0.9330+/-0.0062
 linear | Mode final / J*: ID=0.9023+/-0.0100 | BD=0.8797+/-0.0113
@@ -12,5 +12,5 @@ periodic | Best-of-S final / J*: ID=0.9487+/-0.0095 | BD=0.9450+/-0.0100
 periodic | Mode final / J*: ID=0.8979+/-0.0129 | BD=0.8634+/-0.0185
 periodic | Best-of-S AUC (steps): ID=0.9419+/-0.0095 | BD=0.9316+/-0.0095
 periodic | Mode AUC (steps): ID=0.8728+/-0.0082 | BD=0.8283+/-0.0106
-Figure: fig3_readout_bestS_family_grid_linear-quadratic-periodic_n12_S128_seed01_N60_xBudget.pdf
+Figure: fig3_readout_best_mode_family_grid_linear-quadratic-periodic_n12_S128_seed01_N60_xBudget.pdf
 Runs: runs3_readout_metrics.csv

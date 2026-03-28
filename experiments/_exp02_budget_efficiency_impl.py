@@ -534,7 +534,7 @@ def _draw_budget_panel(
     if show_xlabel:
         ax.set_xlabel("Energy evaluations")
     if show_ylabel:
-        ax.set_ylabel(r"Norm. approx. ratio $\hat{F} / J_{\mathrm{cl}}^*$")
+        ax.set_ylabel(r"Approximation ratio $\widehat{F}/J^\star$")
 
     if family_label is not None:
         ax.text(

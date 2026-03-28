@@ -327,6 +327,18 @@ def interesting_readout_ylim(
     return (ymin, ymax_plot)
 
 
+def interesting_readout_ylim_multi(
+    payloads: dict, families: list[str], metrics: list[str], *, ymax: float = 1.01
+) -> tuple[float, float]:
+    lows = []
+    highs = []
+    for metric in metrics:
+        y0, y1 = interesting_readout_ylim(payloads, families, metric, ymax=ymax)
+        lows.append(float(y0))
+        highs.append(float(y1))
+    return (min(lows), max(highs))
+
+
 # ==============================================================================
 # Plotting
 # ==============================================================================
@@ -429,6 +441,14 @@ def plot_2panel_budget(
     plt.close(fig)
 
 
+def _metric_title(metric: str) -> str:
+    if metric == "bestS":
+        return r"Best-of-$S$"
+    if metric == "mode":
+        return "Mode cut"
+    raise ValueError(f"Unknown metric: {metric}")
+
+
 def _draw_family_metric_panel(
     ax,
     *,
@@ -526,37 +546,10 @@ def plot_family_metric_grid(
     metric: str,
     xaxis: str,
     y_limits: tuple[float, float],
+    layout: str = "stack",
 ):
     _set_exp03_plot_style(grid=True)
 
-    n_rows = len(families)
-    figsize = dual_panel_size() if n_rows == 1 else grid_size(n_rows)
-    fig = plt.figure(figsize=figsize, constrained_layout=True)
-    gs = fig.add_gridspec(n_rows + 1, 1, height_ratios=[1.0] * n_rows + [0.16])
-    axs = []
-    for r, family in enumerate(families):
-        sharex = axs[0] if axs else None
-        ax = fig.add_subplot(gs[r, 0], sharex=sharex)
-        axs.append(ax)
-        payload = payloads[family]
-        y_id, y_fd = _metric_arrays(payload, metric)
-        marker_id_t20, marker_fd_t20 = _metric_t20_markers(payload, metric)
-        _draw_family_metric_panel(
-            ax,
-            x=np.asarray(payload["x"], dtype=float),
-            y_id=y_id,
-            y_fd=y_fd,
-            family_label=_family_label(family),
-            xaxis=xaxis,
-            metric=metric,
-            y_limits=y_limits,
-            show_xlabel=(r == n_rows - 1),
-            marker_id_t20=marker_id_t20,
-            marker_fd_t20=marker_fd_t20,
-        )
-
-    legend_ax = fig.add_subplot(gs[-1, 0])
-    legend_ax.axis("off")
     handles = [
         mlines.Line2D([], [], color=COLORS["ID"], lw=2.2, label="VQE + ID"),
         mlines.Line2D([], [], color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD"),
@@ -571,6 +564,170 @@ def plot_family_metric_grid(
             ]
         )
         ncol = 3
+
+    if layout == "square" and len(families) > 1:
+        n_cols = 2
+        n_plot = len(families)
+        n_slots = n_plot + 1  # reserve one panel-sized slot for the legend
+        n_rows = int(math.ceil(n_slots / n_cols))
+        fig = plt.figure(figsize=(dual_panel_size()[0], dual_panel_size()[0]), constrained_layout=True)
+        gs = fig.add_gridspec(n_rows, n_cols)
+
+        axs = []
+        share_ax = None
+        for idx, family in enumerate(families):
+            r = idx // n_cols
+            c = idx % n_cols
+            ax = fig.add_subplot(gs[r, c], sharex=share_ax, sharey=share_ax)
+            if share_ax is None:
+                share_ax = ax
+            axs.append(ax)
+            ax.set_box_aspect(1.0)
+            payload = payloads[family]
+            y_id, y_fd = _metric_arrays(payload, metric)
+            marker_id_t20, marker_fd_t20 = _metric_t20_markers(payload, metric)
+            _draw_family_metric_panel(
+                ax,
+                x=np.asarray(payload["x"], dtype=float),
+                y_id=y_id,
+                y_fd=y_fd,
+                family_label=_family_label(family),
+                xaxis=xaxis,
+                metric=metric,
+                y_limits=y_limits,
+                show_xlabel=(r == n_rows - 1),
+                marker_id_t20=marker_id_t20,
+                marker_fd_t20=marker_fd_t20,
+            )
+            if c > 0:
+                ax.set_ylabel("")
+
+        legend_idx = len(families)
+        legend_ax = fig.add_subplot(gs[legend_idx // n_cols, legend_idx % n_cols])
+        legend_ax.axis("off")
+        legend_ax.legend(
+            handles=handles,
+            loc="center",
+            ncol=1 if xaxis == "budget" else ncol,
+            frameon=False,
+            fancybox=False,
+            borderpad=0.35,
+            columnspacing=1.2,
+            handlelength=1.8,
+            handletextpad=0.6,
+        )
+
+        for empty_idx in range(legend_idx + 1, n_rows * n_cols):
+            empty_ax = fig.add_subplot(gs[empty_idx // n_cols, empty_idx % n_cols])
+            empty_ax.axis("off")
+    else:
+        n_rows = len(families)
+        figsize = dual_panel_size() if n_rows == 1 else grid_size(n_rows)
+        fig = plt.figure(figsize=figsize, constrained_layout=True)
+        gs = fig.add_gridspec(n_rows + 1, 1, height_ratios=[1.0] * n_rows + [0.16])
+        axs = []
+        for r, family in enumerate(families):
+            sharex = axs[0] if axs else None
+            ax = fig.add_subplot(gs[r, 0], sharex=sharex)
+            axs.append(ax)
+            payload = payloads[family]
+            y_id, y_fd = _metric_arrays(payload, metric)
+            marker_id_t20, marker_fd_t20 = _metric_t20_markers(payload, metric)
+            _draw_family_metric_panel(
+                ax,
+                x=np.asarray(payload["x"], dtype=float),
+                y_id=y_id,
+                y_fd=y_fd,
+                family_label=_family_label(family),
+                xaxis=xaxis,
+                metric=metric,
+                y_limits=y_limits,
+                show_xlabel=(r == n_rows - 1),
+                marker_id_t20=marker_id_t20,
+                marker_fd_t20=marker_fd_t20,
+            )
+
+        legend_ax = fig.add_subplot(gs[-1, 0])
+        legend_ax.axis("off")
+        legend_ax.legend(
+            handles=handles,
+            loc="center",
+            ncol=ncol,
+            frameon=False,
+            fancybox=False,
+            borderpad=0.35,
+            columnspacing=1.2,
+            handlelength=1.8,
+            handletextpad=0.6,
+        )
+
+    save_figure(fig, path)
+    plt.close(fig)
+
+
+def plot_family_dual_metric_grid(
+    path: Path,
+    payloads: dict,
+    families: list[str],
+    *,
+    xaxis: str,
+    y_limits: tuple[float, float],
+):
+    _set_exp03_plot_style(grid=True)
+
+    metrics = ["bestS", "mode"]
+    n_rows = len(families)
+    n_cols = len(metrics)
+    fig = plt.figure(figsize=grid_size(n_rows), constrained_layout=True)
+    gs = fig.add_gridspec(n_rows + 1, n_cols, height_ratios=[1.0] * n_rows + [0.17])
+    axs = np.empty((n_rows, n_cols), dtype=object)
+
+    for r in range(n_rows):
+        for c in range(n_cols):
+            sharex = axs[0, c] if r > 0 else None
+            sharey = axs[r, 0] if c > 0 else None
+            axs[r, c] = fig.add_subplot(gs[r, c], sharex=sharex, sharey=sharey)
+
+    for r, family in enumerate(families):
+        payload = payloads[family]
+        for c, metric in enumerate(metrics):
+            ax = axs[r, c]
+            y_id, y_fd = _metric_arrays(payload, metric)
+            marker_id_t20, marker_fd_t20 = _metric_t20_markers(payload, metric)
+            _draw_family_metric_panel(
+                ax,
+                x=np.asarray(payload["x"], dtype=float),
+                y_id=y_id,
+                y_fd=y_fd,
+                family_label=_family_label(family),
+                xaxis=xaxis,
+                metric=metric,
+                y_limits=y_limits,
+                show_xlabel=(r == n_rows - 1),
+                marker_id_t20=marker_id_t20,
+                marker_fd_t20=marker_fd_t20,
+            )
+            if c > 0:
+                ax.set_ylabel("")
+            if r == 0:
+                ax.set_title(_metric_title(metric), pad=8)
+
+    handles = [
+        mlines.Line2D([], [], color=COLORS["ID"], lw=2.2, label="VQE + ID"),
+        mlines.Line2D([], [], color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + BD"),
+    ]
+    ncol = 2
+    if xaxis == "budget":
+        handles.extend(
+            [
+                mlines.Line2D([], [], color=COLORS["REFERENCE"], lw=1.0, ls=":", label=r"Reference $J^*/J^* = 1$"),
+                mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label=r"ID at $t=20$"),
+                mlines.Line2D([], [], color=COLORS["FD"], marker="s", ls="None", ms=5, label=r"BD at $t=20$"),
+            ]
+        )
+        ncol = 3
+    legend_ax = fig.add_subplot(gs[-1, :])
+    legend_ax.axis("off")
     legend_ax.legend(
         handles=handles,
         loc="center",
@@ -581,6 +738,7 @@ def plot_family_metric_grid(
         columnspacing=1.2,
         handlelength=1.8,
         handletextpad=0.6,
+        fontsize=10,
     )
 
     save_figure(fig, path)
@@ -984,6 +1142,13 @@ def parse_args():
         "--budget_points", type=int, default=220, help="Number of points for shared budget grid when --xaxis=budget."
     )
     p.add_argument("--metric", type=str, default="bestS", choices=["bestS", "mode", "both"])
+    p.add_argument(
+        "--family_grid_layout",
+        type=str,
+        default="stack",
+        choices=["stack", "square"],
+        help="Layout for multi-family grid plots.",
+    )
     p.add_argument("--ymin", type=float, default=None)
     p.add_argument("--ymax", type=float, default=1.01)
 
@@ -1026,6 +1191,7 @@ def main():
     N_total = sum(int(payloads[family]["metric_id_bestS"].shape[0]) for family in families)
     suf = f"{suffix_families}_n{a.n}_S{a.readout_shots}_seed0{a.seed0}_N{N_total}"
     x_suffix = "xIters" if a.xaxis == "iters" else "xBudget"
+    layout_suffix = "_square" if a.family_grid_layout == "square" and len(families) > 1 else ""
 
     if a.metric == "both" and len(families) == 1:
         family = families[0]
@@ -1048,6 +1214,14 @@ def main():
                 payload["metric_id_mode"],
                 payload["metric_fd_mode"],
             )
+    elif a.metric == "both":
+        y_limits = (
+            interesting_readout_ylim_multi(payloads, families, ["bestS", "mode"], ymax=a.ymax)
+            if a.ymin is None
+            else (float(a.ymin), float(a.ymax))
+        )
+        fig_path = outdir / f"fig3_readout_best_mode_family_grid_{suf}_{x_suffix}.{a.fmt}"
+        plot_family_dual_metric_grid(fig_path, payloads, families, xaxis=a.xaxis, y_limits=y_limits)
     else:
         metric = "bestS" if a.metric == "both" else a.metric
         y_limits = (
@@ -1055,8 +1229,16 @@ def main():
             if a.ymin is None
             else (float(a.ymin), float(a.ymax))
         )
-        fig_path = outdir / f"fig3_readout_{metric}_family_grid_{suf}_{x_suffix}.{a.fmt}"
-        plot_family_metric_grid(fig_path, payloads, families, metric=metric, xaxis=a.xaxis, y_limits=y_limits)
+        fig_path = outdir / f"fig3_readout_{metric}_family_grid_{suf}_{x_suffix}{layout_suffix}.{a.fmt}"
+        plot_family_metric_grid(
+            fig_path,
+            payloads,
+            families,
+            metric=metric,
+            xaxis=a.xaxis,
+            y_limits=y_limits,
+            layout=a.family_grid_layout,
+        )
 
         if len(families) > 1:
             for family in families:
