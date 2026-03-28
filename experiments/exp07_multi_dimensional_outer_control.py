@@ -910,7 +910,7 @@ def plot_pair_scatter(path: Path, x: np.ndarray, y: np.ndarray, *, xlabel: str, 
         ax.text(
             0.98,
             0.04,
-            f"ID better in {win:.1f}%",
+            f"ID better in {win:.1f}\\%",
             transform=ax.transAxes,
             ha="right",
             va="bottom",
@@ -1121,7 +1121,7 @@ def plot_sixpack_collage(
         ax.text(
             0.98,
             0.04,
-            f"ID better in {win:.1f}%",
+            f"ID better in {win:.1f}\\%",
             transform=ax.transAxes,
             ha="right",
             va="bottom",
