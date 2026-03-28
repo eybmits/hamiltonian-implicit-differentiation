@@ -283,7 +283,7 @@ def write_tex_table(path: Path, K_rows: List[Dict], caption: str, label: str):
     lines.append(r"\small")
     lines.append(r"\begin{tabular}{r r c c c}")
     lines.append(r"\toprule")
-    lines.append(r"$K$ & $N$ & switch density & AUC gain (ID--FD) & win rate \\")
+    lines.append(r"$K$ & $N$ & switch density & AUC gain (CR-ID--FD) & win rate \\")
     lines.append(r"\midrule")
     for rr in K_rows:
         K = int(rr["K"])
@@ -540,7 +540,7 @@ def plot_auc_gain_by_K(path: Path, rows: List[Dict], K_list: List[int]):
     ax.axhline(0.0, color=COLORS["REFERENCE"], lw=1.0, ls=":", zorder=1)
 
     ax.set_xlabel(r"Periodic difficulty $K$")
-    ax.set_ylabel(r"AUC gain $\mathrm{AUC}_{\mathrm{ID}}-\mathrm{AUC}_{\mathrm{FD}}$")
+    ax.set_ylabel(r"AUC gain (CR-ID $-$ FD)")
 
     ax.set_xticks(K_list)
     ax.set_xlim(min(K_list) - 0.6, max(K_list) + 0.6)
@@ -650,7 +650,7 @@ def plot_robustness_panels(path: Path, rows: List[Dict], K_list: List[int]):
     finite_gains = gains[np.isfinite(gains)]
     ax_gain.axhline(0.0, color=COLORS["REFERENCE"], lw=1.0, ls=":", zorder=1)
     ax_gain.set_xlabel(r"Periodic difficulty $K$")
-    ax_gain.set_ylabel(r"AUC gain $\mathrm{AUC}_{\mathrm{ID}}-\mathrm{AUC}_{\mathrm{FD}}$")
+    ax_gain.set_ylabel(r"AUC gain (CR-ID $-$ FD)")
     ax_gain.set_xticks(K_list)
     ax_gain.set_xlim(min(K_list) - 0.6, max(K_list) + 0.6)
     if finite_gains.size:

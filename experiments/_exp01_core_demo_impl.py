@@ -172,7 +172,7 @@ def _draw_envelope_panel(
 
     if panel_legend:
         line_env = mlines.Line2D([], [], color=COLORS["ENV"], lw=1.5, label="Envelope")
-        dot_id = mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label="ID samples")
+        dot_id = mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label="CR-ID samples")
         dot_fd = mlines.Line2D([], [], color=COLORS["FD"], marker="s", ls="None", ms=5, label="FD samples")
         add_panel_legend(
             ax,
@@ -260,7 +260,7 @@ def _draw_efficiency_panel(
 
     if panel_legend:
         handles = [
-            mlines.Line2D([], [], color=COLORS["ID"], lw=1.8, label="VQE + ID"),
+            mlines.Line2D([], [], color=COLORS["ID"], lw=1.8, label="VQE + CR-ID"),
             mlines.Line2D([], [], color=COLORS["FD"], lw=1.8, ls="--", label="VQE + FD"),
             Patch(facecolor=COLORS["ID"], alpha=0.1, edgecolor="none", label="Advantage zone"),
         ]
@@ -379,7 +379,7 @@ def _draw_cost_gap_panel(
     ax.text(
         0.98,
         0.04,
-        rf"ID {slope_id:.1f} eval/step" "\n" rf"FD {slope_fd:.1f} eval/step",
+        rf"CR-ID {slope_id:.1f} eval/step" "\n" rf"FD {slope_fd:.1f} eval/step",
         transform=ax.transAxes,
         ha="right",
         va="bottom",
@@ -396,7 +396,7 @@ def _draw_cost_gap_panel(
 
     if panel_legend:
         handles = [
-            mlines.Line2D([], [], color=COLORS["ID"], lw=2.0, label="VQE + ID"),
+            mlines.Line2D([], [], color=COLORS["ID"], lw=2.0, label="VQE + CR-ID"),
             mlines.Line2D([], [], color=COLORS["FD"], lw=2.0, ls="--", label="VQE + FD"),
             Patch(facecolor=COLORS["REFERENCE"], alpha=0.2, edgecolor="none", label="Cost overhead"),
             mlines.Line2D([], [], color=COLORS["ENV"], lw=1.0, ls=":", label=r"Budget $B$"),
@@ -418,7 +418,7 @@ def _draw_trajectory_panel(
     t_fd = np.arange(len(hist_fd["lam_pre"]))
 
     ax.axhline(lam_true, color=COLORS["ENV"], lw=1.0, alpha=0.8, ls="-", label=r"Optimum $\lambda^*$")
-    ax.plot(t_id, hist_id["lam_pre"], color=COLORS["ID"], lw=1.5, label="VQE + ID")
+    ax.plot(t_id, hist_id["lam_pre"], color=COLORS["ID"], lw=1.5, label="VQE + CR-ID")
     ax.plot(t_fd, hist_fd["lam_pre"], color=COLORS["FD"], lw=1.5, ls="--", label="VQE + FD")
     ax.scatter([0], [hist_id["lam_pre"][0]], color=COLORS["ENV"], s=20, marker="x", zorder=5, label="Start")
     ax.scatter([t_id[-1]], [hist_id["lam_pre"][-1]], color=COLORS["ID"], s=20, edgecolors="white", lw=0.5, zorder=5)
@@ -443,7 +443,7 @@ def _draw_trajectory_panel(
     if panel_legend:
         handles = [
             mlines.Line2D([], [], color=COLORS["ENV"], lw=1.0, label=r"Optimum $\lambda^*$"),
-            mlines.Line2D([], [], color=COLORS["ID"], lw=1.5, label="VQE + ID"),
+            mlines.Line2D([], [], color=COLORS["ID"], lw=1.5, label="VQE + CR-ID"),
             mlines.Line2D([], [], color=COLORS["FD"], lw=1.5, ls="--", label="VQE + FD"),
             mlines.Line2D([], [], color=COLORS["ENV"], marker="x", ls="None", ms=6, label="Start"),
         ]
@@ -565,7 +565,7 @@ def plot_family_story_grid(
     legend_ax = fig.add_subplot(gs[3, :])
     legend_ax.axis("off")
     handles = [
-        mlines.Line2D([], [], color=COLORS["ID"], lw=1.8, label="VQE + ID"),
+        mlines.Line2D([], [], color=COLORS["ID"], lw=1.8, label="VQE + CR-ID"),
         mlines.Line2D([], [], color=COLORS["FD"], lw=1.8, ls="--", label="VQE + FD"),
         mlines.Line2D([], [], color=COLORS["REFERENCE"], lw=1.0, ls=":", label="Reference / target"),
         Patch(facecolor=COLORS["ID"], alpha=0.10, edgecolor="none", label="Highlighted region"),
@@ -931,12 +931,12 @@ def _run_single_family(args, kind: str, out: Path):
     )
 
     summary_lines = [
-        "Experiment 1 — Core ID vs FD Demo",
+        "Experiment 1 — Core CR-ID vs FD Demo",
         f"family={kind} | n={args.n} | seed={args.seed} | p_edge={args.p_edge} | graph_seed={args.graph_seed}",
         f"periodic_K={args.periodic_K} | budget_evals={args.budget_evals} | lam0={args.lam0}",
         f"story_grid=0_story_grid_{suf}.{args.fmt}",
-        f"final best ID={float(h_id['J_best'][-1]):.4f} | final best FD={float(h_fd['J_best'][-1]):.4f}",
-        f"final evals ID={float(h_id['evals_cum'][-1]):.1f} | final evals FD={float(h_fd['evals_cum'][-1]):.1f}",
+        f"final best CR-ID={float(h_id['J_best'][-1]):.4f} | final best FD={float(h_fd['J_best'][-1]):.4f}",
+        f"final evals CR-ID={float(h_id['evals_cum'][-1]):.1f} | final evals FD={float(h_fd['evals_cum'][-1]):.1f}",
     ]
     (out / "SUMMARY.txt").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
     return {

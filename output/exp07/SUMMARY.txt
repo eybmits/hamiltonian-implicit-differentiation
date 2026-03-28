@@ -5,12 +5,12 @@ budget_evals=2000.0 | num_instances=8 | seed0=7
 n_sweep=8,9,10,11,12,13,14
 FD warm-start: best
 
-ΔAUC_B mean (ID−FD): +0.101257  (sem=0.007776)
+ΔAUC_B mean (CR-ID−FD): +0.101257  (sem=0.007776)
 win rate (ΔAUC>0): 100.00%
 
-Final best-so-far / $J^*$: ID=0.8354±0.0169 | FD=0.7239±0.0118
-$\mathrm{AUC}_B$: ID=0.7802±0.0152 | FD=0.6789±0.0096
-Outer steps within budget $B$: ID=23.0000±0.0000 | FD=7.0000±0.0000
+Final best-so-far / $J^*$: CR-ID=0.8354±0.0169 | FD=0.7239±0.0118
+$\mathrm{AUC}_B$: CR-ID=0.7802±0.0152 | FD=0.6789±0.0096
+Outer steps within budget $B$: CR-ID=23.0000±0.0000 | FD=7.0000±0.0000
 
 Files:
   Budget curve:         fig7_edgewise_best_vs_evals_periodic_n12_B2000_inner28_R1_S0_seed07_N8.pdf

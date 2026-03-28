@@ -480,7 +480,7 @@ def _draw_budget_panel(
         zorder=3,
         solid_capstyle="round",
     )
-    ax.plot(x, C.mean_id, color=COLORS["ID"], lw=2.2, ls="-", label="VQE + ID", zorder=4, solid_capstyle="round")
+    ax.plot(x, C.mean_id, color=COLORS["ID"], lw=2.2, ls="-", label="VQE + CR-ID", zorder=4, solid_capstyle="round")
 
     if C.id_p20:
         x_id, y_id = C.id_p20
@@ -620,10 +620,10 @@ def plot_budget_family_grid(path: Path, curves_by_family, families, shots_list, 
             )
 
     handles = [
-        mlines.Line2D([], [], color=COLORS["ID"], lw=1.9, label="VQE + ID"),
+        mlines.Line2D([], [], color=COLORS["ID"], lw=1.9, label="VQE + CR-ID"),
         mlines.Line2D([], [], color=COLORS["FD"], lw=1.7, ls="--", label="VQE + FD"),
         mlines.Line2D([], [], color=COLORS["REFERENCE"], lw=1.0, ls=":", label=r"Reference $J^*/J^* = 1$"),
-        mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label=r"ID at $t=20$"),
+        mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label=r"CR-ID at $t=20$"),
         mlines.Line2D([], [], color=COLORS["FD"], marker="s", ls="None", ms=5, label=r"FD at $t=20$"),
     ]
     legend_ax = fig.add_subplot(gs[-1, :])
@@ -647,7 +647,7 @@ def plot_budget_family_grid(path: Path, curves_by_family, families, shots_list, 
 
 
 def write_table_latex(path, table):
-    lines = [r"\begin{tabular}{l c c c}", r"\hline", r"Family & Shots & VQE--ID & VQE--FD \\", r"\hline"]
+    lines = [r"\begin{tabular}{l c c c}", r"\hline", r"Family & Shots & VQE--CR-ID & VQE--FD \\", r"\hline"]
     for (kind, shots_lbl), d in table.items():
         mid, seid = d["ID"]
         mfd, sefd = d["FD"]
@@ -833,7 +833,7 @@ def main():
             shots_label = str(int(float(row["shots"])))
         summary_lines.append(
             f"{row['family']} | shots={shots_label}: "
-            f"ID={float(row['ID_mean']):.4f}+/-{float(row['ID_stderr']):.4f} | "
+            f"CR-ID={float(row['ID_mean']):.4f}+/-{float(row['ID_stderr']):.4f} | "
             f"FD={float(row['FD_mean']):.4f}+/-{float(row['FD_stderr']):.4f}"
         )
     (out / "SUMMARY.txt").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")

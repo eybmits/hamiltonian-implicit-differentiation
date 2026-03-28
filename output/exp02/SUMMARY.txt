@@ -4,9 +4,9 @@ n=12 | p_edge=0.45 | graph_seed=7 | periodic_K=6
 budget_evals=2000.0 | seed0=1 | num_seeds=5
 
 Matched-budget summary rows:
-linear | shots=exact: ID=0.8411+/-0.0189 | FD=0.8247+/-0.0176
-linear | shots=256: ID=0.8408+/-0.0208 | FD=0.8097+/-0.0169
-quadratic | shots=exact: ID=0.8380+/-0.0142 | FD=0.7976+/-0.0173
-quadratic | shots=256: ID=0.8419+/-0.0206 | FD=0.8079+/-0.0135
-periodic | shots=exact: ID=0.8438+/-0.0259 | FD=0.8314+/-0.0348
-periodic | shots=256: ID=0.8391+/-0.0298 | FD=0.8216+/-0.0322
+linear | shots=exact: CR-ID=0.8411+/-0.0189 | FD=0.8247+/-0.0176
+linear | shots=256: CR-ID=0.8408+/-0.0208 | FD=0.8097+/-0.0169
+quadratic | shots=exact: CR-ID=0.8380+/-0.0142 | FD=0.7976+/-0.0173
+quadratic | shots=256: CR-ID=0.8419+/-0.0206 | FD=0.8079+/-0.0135
+periodic | shots=exact: CR-ID=0.8438+/-0.0259 | FD=0.8314+/-0.0348
+periodic | shots=256: CR-ID=0.8391+/-0.0298 | FD=0.8216+/-0.0322

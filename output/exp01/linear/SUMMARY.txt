@@ -1,6 +1,6 @@
-Experiment 1 — Core ID vs FD Demo
+Experiment 1 — Core CR-ID vs FD Demo
 family=linear | n=12 | seed=7 | p_edge=0.45 | graph_seed=7
 periodic_K=6 | budget_evals=2000.0 | lam0=0.8
 story_grid=0_story_grid_linear_n12_seed7.pdf
-final best ID=54.9548 | final best FD=53.0017
-final evals ID=1911.0 | final evals FD=1911.0
+final best CR-ID=54.9548 | final best FD=53.0017
+final evals CR-ID=1911.0 | final evals FD=1911.0

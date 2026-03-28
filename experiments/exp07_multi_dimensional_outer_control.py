@@ -645,7 +645,7 @@ def write_table_tex(path: Path, summary_rows: List[Dict], caption: str, label: s
         f.write("\\small\n")
         f.write("\\begin{tabular}{lcc}\n")
         f.write("\\toprule\n")
-        f.write("Metric & VQE+ID & VQE+FD\\\\\n")
+        f.write("Metric & VQE+CR-ID & VQE+FD\\\\\n")
         f.write("\\midrule\n")
         for r in summary_rows:
             f.write(
@@ -688,7 +688,7 @@ def plot_2panel_budget_and_gain(
 
     # Left panel: Budget curves
     ax = axs[0]
-    ax.plot(b, mu_id, color=COLORS["ID"], label="VQE + ID")
+    ax.plot(b, mu_id, color=COLORS["ID"], label="VQE + CR-ID")
     ax.fill_between(b, mu_id - se_id, mu_id + se_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
     ax.plot(b, mu_fd, color=COLORS["FD"], ls="--", label="VQE + FD")
     ax.fill_between(b, mu_fd - se_fd, mu_fd + se_fd, color=COLORS["FD"], alpha=0.18, linewidth=0)
@@ -711,7 +711,7 @@ def plot_2panel_budget_and_gain(
     ax.scatter(x, y, s=22, color="#666666", alpha=0.75, edgecolors="none")
 
     ax.set_xlabel(r"Number of edges $|E|$")
-    ax.set_ylabel(r"$\Delta \mathrm{AUC}_B$ (ID $-$ FD)")
+    ax.set_ylabel(r"$\Delta \mathrm{AUC}_B$ (CR-ID $-$ FD)")
     apply_thesis_axes_style(ax, grid=False)
 
     save_figure(fig, path)
@@ -754,7 +754,7 @@ def plot_steps_bar(
     ax.scatter([1], [mu_fd], color=COLORS["FD"], s=26, zorder=5, edgecolors="white", linewidth=0.5)
 
     ax.set_xticks(xs)
-    ax.set_xticklabels(["ID", "FD"])
+    ax.set_xticklabels(["CR-ID", "FD"])
     ax.set_ylabel(r"Outer steps within budget $B$")
     ax.set_xlim(-0.6, 1.6)
 
@@ -775,7 +775,7 @@ def plot_steps_bar(
 
 
 CURVE_STYLES = {
-    "ID": {"color": COLORS["ID"], "ls": "-", "label": "VQE + ID", "marker": "o", "alpha": 0.14},
+    "ID": {"color": COLORS["ID"], "ls": "-", "label": "VQE + CR-ID", "marker": "o", "alpha": 0.14},
     "FD": {"color": COLORS["FD"], "ls": "--", "label": "VQE + FD", "marker": "s", "alpha": 0.12},
 }
 
@@ -805,7 +805,7 @@ def plot_budget_curve(path: Path, budget_grid: np.ndarray, best_id_grid: np.ndar
     mu_id, se_id = _mean_stderr(best_id_grid, axis=0)
     mu_fd, se_fd = _mean_stderr(best_fd_grid, axis=0)
 
-    ax.plot(b, mu_id, color=COLORS["ID"], lw=1.9, label="VQE + ID")
+    ax.plot(b, mu_id, color=COLORS["ID"], lw=1.9, label="VQE + CR-ID")
     ax.fill_between(b, mu_id - se_id, mu_id + se_id, color=COLORS["ID"], alpha=0.14, linewidth=0)
     ax.plot(b, mu_fd, color=COLORS["FD"], lw=1.9, ls="--", label="VQE + FD")
     ax.fill_between(b, mu_fd - se_fd, mu_fd + se_fd, color=COLORS["FD"], alpha=0.12, linewidth=0)
@@ -830,14 +830,14 @@ def plot_auc_gain_scatter(path: Path, auc_gain: np.ndarray, m_edges: np.ndarray)
     ax.scatter(x[pos], y[pos], s=28, color=COLORS["ID"], alpha=0.88, edgecolors="white", linewidths=0.4, zorder=3)
     ax.scatter(x[~pos], y[~pos], s=28, color=COLORS["FD"], alpha=0.88, edgecolors="white", linewidths=0.4, zorder=3)
     ax.set_xlabel(r"Number of edges $|E|$")
-    ax.set_ylabel(r"$\Delta \mathrm{AUC}_B$ (ID $-$ FD)")
+    ax.set_ylabel(r"$\Delta \mathrm{AUC}_B$ (CR-ID $-$ FD)")
     _footer_legend(
         legend_ax,
         [
-            Line2D([], [], color=COLORS["ID"], marker="o", lw=0, markersize=5, label="ID > FD"),
-            Line2D([], [], color=COLORS["FD"], marker="o", lw=0, markersize=5, label="FD >= ID"),
+            Line2D([], [], color=COLORS["ID"], marker="o", lw=0, markersize=5, label="CR-ID > FD"),
+            Line2D([], [], color=COLORS["FD"], marker="o", lw=0, markersize=5, label="FD >= CR-ID"),
         ],
-        ["ID > FD", "FD >= ID"],
+        ["CR-ID > FD", "FD >= CR-ID"],
         ncol=2,
     )
     apply_thesis_axes_style(ax, grid=False)
@@ -865,15 +865,15 @@ def plot_steps_bar_pretty(path: Path, steps_id: np.ndarray, steps_fd: np.ndarray
         linewidth=1.2,
     )
     ax.set_xticks(xs)
-    ax.set_xticklabels(["ID", "FD"])
+    ax.set_xticklabels(["CR-ID", "FD"])
     ax.set_ylabel(r"Outer steps within budget $B$")
     _footer_legend(
         legend_ax,
         [
-            Line2D([], [], color=COLORS["ID"], lw=2.0, label="VQE + ID"),
+            Line2D([], [], color=COLORS["ID"], lw=2.0, label="VQE + CR-ID"),
             Line2D([], [], color=COLORS["FD"], lw=2.0, ls="--", label="VQE + FD"),
         ],
-        ["VQE + ID", "VQE + FD"],
+        ["VQE + CR-ID", "VQE + FD"],
         ncol=2,
     )
     apply_thesis_axes_style(ax, grid=False)
@@ -910,7 +910,7 @@ def plot_pair_scatter(path: Path, x: np.ndarray, y: np.ndarray, *, xlabel: str, 
         ax.text(
             0.98,
             0.04,
-            f"ID better in {win:.1f}\\%",
+            f"CR-ID better in {win:.1f}\\%",
             transform=ax.transAxes,
             ha="right",
             va="bottom",
@@ -920,10 +920,10 @@ def plot_pair_scatter(path: Path, x: np.ndarray, y: np.ndarray, *, xlabel: str, 
     _footer_legend(
         legend_ax,
         [
-            Line2D([], [], color=COLORS["ID"], marker="o", lw=0, markersize=5, label="ID > FD"),
-            Line2D([], [], color=COLORS["FD"], marker="o", lw=0, markersize=5, label="FD >= ID"),
+            Line2D([], [], color=COLORS["ID"], marker="o", lw=0, markersize=5, label="CR-ID > FD"),
+            Line2D([], [], color=COLORS["FD"], marker="o", lw=0, markersize=5, label="FD >= CR-ID"),
         ],
-        ["ID > FD", "FD >= ID"],
+        ["CR-ID > FD", "FD >= CR-ID"],
         ncol=2,
     )
     apply_thesis_axes_style(ax, grid=False)
@@ -1072,7 +1072,7 @@ def plot_sixpack_collage(
         linewidth=1.2,
     )
     ax.set_xticks(xs)
-    ax.set_xticklabels(["ID", "FD"])
+    ax.set_xticklabels(["CR-ID", "FD"])
     ax.set_ylabel(r"Steps at $B$")
     apply_thesis_axes_style(ax, grid=False)
     _compact_collage_axis(ax)
@@ -1121,7 +1121,7 @@ def plot_sixpack_collage(
         ax.text(
             0.98,
             0.04,
-            f"ID better in {win:.1f}\\%",
+            f"CR-ID better in {win:.1f}\\%",
             transform=ax.transAxes,
             ha="right",
             va="bottom",
@@ -1135,16 +1135,16 @@ def plot_sixpack_collage(
         best_final_fd,
         best_final_id,
         r"FD at $B$ ($F/J^*$)",
-        r"ID at $B$ ($F/J^*$)",
+        r"CR-ID at $B$ ($F/J^*$)",
         "(E)",
     )
-    _scatter_panel(axes[1, 2], auc_fd, auc_id, r"FD $\mathrm{AUC}_B$", r"ID $\mathrm{AUC}_B$", "(F)")
+    _scatter_panel(axes[1, 2], auc_fd, auc_id, r"FD $\mathrm{AUC}_B$", r"CR-ID $\mathrm{AUC}_B$", "(F)")
 
     handles = [
-        Line2D([], [], color=COLORS["ID"], lw=1.9, ls="-", label="VQE + ID"),
+        Line2D([], [], color=COLORS["ID"], lw=1.9, ls="-", label="VQE + CR-ID"),
         Line2D([], [], color=COLORS["FD"], lw=1.9, ls="--", label="VQE + FD"),
-        Line2D([], [], color=COLORS["ID"], marker="o", lw=0, markersize=5, label="ID > FD"),
-        Line2D([], [], color=COLORS["FD"], marker="o", lw=0, markersize=5, label="FD >= ID"),
+        Line2D([], [], color=COLORS["ID"], marker="o", lw=0, markersize=5, label="CR-ID > FD"),
+        Line2D([], [], color=COLORS["FD"], marker="o", lw=0, markersize=5, label="FD >= CR-ID"),
     ]
     legend_ax = fig.add_subplot(gs[2, :])
     legend_ax.axis("off")
@@ -1530,7 +1530,7 @@ def main():
         best_final_fd,
         best_final_id,
         xlabel=r"VQE + FD at budget $B$  ($F/J^*$)",
-        ylabel=r"VQE + ID at budget $B$  ($F/J^*$)",
+        ylabel=r"VQE + CR-ID at budget $B$  ($F/J^*$)",
     )
 
     fig_pair_auc = out / f"fig7_edgewise_auc_pair_scatter_{suf}.{a.fmt}"
@@ -1539,7 +1539,7 @@ def main():
         auc_fd,
         auc_id,
         xlabel=r"VQE + FD $\mathrm{AUC}_B$",
-        ylabel=r"VQE + ID $\mathrm{AUC}_B$",
+        ylabel=r"VQE + CR-ID $\mathrm{AUC}_B$",
     )
 
     fig_collage = out / f"fig7_edgewise_sixpack_{suf}.{a.fmt}"
@@ -1615,12 +1615,12 @@ def main():
         )
         win = float(np.mean(auc_gain[np.isfinite(auc_gain)] > 0.0))
 
-        f.write(f"ΔAUC_B mean (ID−FD): {mu_gain:+.6f}  (sem={sem_gain:.6f})\n")
+        f.write(f"ΔAUC_B mean (CR-ID−FD): {mu_gain:+.6f}  (sem={sem_gain:.6f})\n")
         f.write(f"win rate (ΔAUC>0): {100.0 * win:.2f}%\n\n")
 
         for rrow in summary_rows:
             f.write(
-                f"{rrow['metric']}: ID={rrow['id_mean']:.4f}±{rrow['id_se']:.4f} | "
+                f"{rrow['metric']}: CR-ID={rrow['id_mean']:.4f}±{rrow['id_se']:.4f} | "
                 f"FD={rrow['fd_mean']:.4f}±{rrow['fd_se']:.4f}\n"
             )
 

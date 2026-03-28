@@ -1,4 +1,4 @@
-Experiment 6: Heatmap over (n,p) showing ΔAUC_B(ID - FD)
+Experiment 6: Heatmap over (n,p) showing ΔAUC_B(CR-ID - FD)
 Graph classes: er, ring, ws, ba
 n_list: [8, 10, 12, 14]
 p_list: [0.2, 0.35, 0.5, 0.65]
@@ -12,7 +12,7 @@ Family: kind=periodic periodic_K=6
 FD step: fd_c_frac=0.1
 
 Legend: cell text shows
-  line1: mean ΔAUC_B (ID - FD)
+  line1: mean ΔAUC_B (CR-ID - FD)
   line2: win-rate % (fraction seeds with ΔAUC_B>0)
 
 Saved outputs:

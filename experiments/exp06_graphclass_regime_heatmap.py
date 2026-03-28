@@ -546,7 +546,7 @@ def plot_heatmaps(
     # shared colorbar (attach only to used panels, not the hidden axes)
     if last_im is not None:
         cbar = fig.colorbar(last_im, ax=panel_axes, shrink=0.92, pad=0.02)
-        cbar.set_label(r"$\Delta\,\mathrm{AUC}_B$ (ID $-$ FD)")
+        cbar.set_label(r"$\Delta\,\mathrm{AUC}_B$ (CR-ID $-$ FD)")
 
     save_figure(fig, path)
     plt.close(fig)
@@ -806,7 +806,7 @@ def main():
 
     # summary text
     lines = []
-    lines.append("Experiment 6: Heatmap over (n,p) showing ΔAUC_B(ID - FD)")
+    lines.append("Experiment 6: Heatmap over (n,p) showing ΔAUC_B(CR-ID - FD)")
     lines.append(f"Graph classes: {', '.join(graph_classes)}")
     lines.append(f"n_list: {n_list}")
     lines.append(f"p_list: {p_list}")
@@ -820,7 +820,7 @@ def main():
     lines.append(f"FD step: fd_c_frac={a.fd_c_frac}")
     lines.append("")
     lines.append("Legend: cell text shows")
-    lines.append("  line1: mean ΔAUC_B (ID - FD)")
+    lines.append("  line1: mean ΔAUC_B (CR-ID - FD)")
     lines.append("  line2: win-rate % (fraction seeds with ΔAUC_B>0)")
     lines.append("")
     lines.append("Saved outputs:")

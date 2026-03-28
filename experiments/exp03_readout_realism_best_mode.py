@@ -19,7 +19,7 @@ What we simulate:
          - Mode cut:   cut value of the most frequent sampled bitstring
 
 We compare:
-  - ID        : correlator-reuse implicit differentiation (CR-ImpDiff)
+  - CR-ID     : correlator-reuse implicit differentiation (CR-ImpDiff)
   - FD        : black-box finite difference on the VALUE function F(lambda) (requires re-solves at lambda+-c)
                 (Legend label: "VQE + FD")
 
@@ -361,7 +361,7 @@ def plot_2panel_iters(path: Path, best_id: np.ndarray, best_fd: np.ndarray, mode
     fig, axs = plt.subplots(1, 2, figsize=dual_panel_size(), constrained_layout=True, sharey=True)
 
     ax = axs[0]
-    ax.plot(t, mu_b_id, color=COLORS["ID"], lw=2.2, label="VQE + ID", solid_capstyle="round")
+    ax.plot(t, mu_b_id, color=COLORS["ID"], lw=2.2, label="VQE + CR-ID", solid_capstyle="round")
     ax.fill_between(t, mu_b_id - se_b_id, mu_b_id + se_b_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
     ax.plot(t, mu_b_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + FD", solid_capstyle="round")
     ax.fill_between(t, mu_b_fd - se_b_fd, mu_b_fd + se_b_fd, color=COLORS["FD"], alpha=0.14, linewidth=0)
@@ -370,7 +370,7 @@ def plot_2panel_iters(path: Path, best_id: np.ndarray, best_fd: np.ndarray, mode
     ax.set_xlim(1, T)
 
     ax = axs[1]
-    ax.plot(t, mu_m_id, color=COLORS["ID"], lw=2.2, label="VQE + ID", solid_capstyle="round")
+    ax.plot(t, mu_m_id, color=COLORS["ID"], lw=2.2, label="VQE + CR-ID", solid_capstyle="round")
     ax.fill_between(t, mu_m_id - se_m_id, mu_m_id + se_m_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
     ax.plot(t, mu_m_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + FD", solid_capstyle="round")
     ax.fill_between(t, mu_m_fd - se_m_fd, mu_m_fd + se_m_fd, color=COLORS["FD"], alpha=0.14, linewidth=0)
@@ -412,7 +412,7 @@ def plot_2panel_budget(
     fig, axs = plt.subplots(1, 2, figsize=dual_panel_size(), constrained_layout=True, sharey=True)
 
     ax = axs[0]
-    ax.plot(b, mu_b_id, color=COLORS["ID"], lw=2.2, label="VQE + ID", solid_capstyle="round")
+    ax.plot(b, mu_b_id, color=COLORS["ID"], lw=2.2, label="VQE + CR-ID", solid_capstyle="round")
     ax.fill_between(b, mu_b_id - se_b_id, mu_b_id + se_b_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
     ax.plot(b, mu_b_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + FD", solid_capstyle="round")
     ax.fill_between(b, mu_b_fd - se_b_fd, mu_b_fd + se_b_fd, color=COLORS["FD"], alpha=0.14, linewidth=0)
@@ -421,7 +421,7 @@ def plot_2panel_budget(
     ax.set_xlim(float(b[0]), float(b[-1]))
 
     ax = axs[1]
-    ax.plot(b, mu_m_id, color=COLORS["ID"], lw=2.2, label="VQE + ID", solid_capstyle="round")
+    ax.plot(b, mu_m_id, color=COLORS["ID"], lw=2.2, label="VQE + CR-ID", solid_capstyle="round")
     ax.fill_between(b, mu_m_id - se_m_id, mu_m_id + se_m_id, color=COLORS["ID"], alpha=0.18, linewidth=0)
     ax.plot(b, mu_m_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + FD", solid_capstyle="round")
     ax.fill_between(b, mu_m_fd - se_m_fd, mu_m_fd + se_m_fd, color=COLORS["FD"], alpha=0.14, linewidth=0)
@@ -470,7 +470,7 @@ def _draw_family_metric_panel(
     ax.fill_between(x, mu_fd - se_fd, mu_fd + se_fd, color=COLORS["FD"], alpha=0.14, linewidth=0, zorder=1)
     ax.fill_between(x, mu_id - se_id, mu_id + se_id, color=COLORS["ID"], alpha=0.18, linewidth=0, zorder=2)
     ax.plot(x, mu_fd, color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + FD", zorder=3, solid_capstyle="round")
-    ax.plot(x, mu_id, color=COLORS["ID"], lw=2.2, ls="-", label="VQE + ID", zorder=4, solid_capstyle="round")
+    ax.plot(x, mu_id, color=COLORS["ID"], lw=2.2, ls="-", label="VQE + CR-ID", zorder=4, solid_capstyle="round")
 
     if xaxis == "budget":
         if marker_id_t20 is not None:
@@ -551,7 +551,7 @@ def plot_family_metric_grid(
     _set_exp03_plot_style(grid=True)
 
     handles = [
-        mlines.Line2D([], [], color=COLORS["ID"], lw=2.2, label="VQE + ID"),
+        mlines.Line2D([], [], color=COLORS["ID"], lw=2.2, label="VQE + CR-ID"),
         mlines.Line2D([], [], color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + FD"),
     ]
     ncol = 2
@@ -559,7 +559,7 @@ def plot_family_metric_grid(
         handles.extend(
             [
                 mlines.Line2D([], [], color=COLORS["REFERENCE"], lw=1.0, ls=":", label=r"Reference $J^*/J^* = 1$"),
-                mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label=r"ID at $t=20$"),
+                mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label=r"CR-ID at $t=20$"),
                 mlines.Line2D([], [], color=COLORS["FD"], marker="s", ls="None", ms=5, label=r"FD at $t=20$"),
             ]
         )
@@ -713,7 +713,7 @@ def plot_family_dual_metric_grid(
                 ax.set_title(_metric_title(metric), pad=8)
 
     handles = [
-        mlines.Line2D([], [], color=COLORS["ID"], lw=2.2, label="VQE + ID"),
+        mlines.Line2D([], [], color=COLORS["ID"], lw=2.2, label="VQE + CR-ID"),
         mlines.Line2D([], [], color=COLORS["FD"], lw=2.0, ls=(0, (4, 2)), label="VQE + FD"),
     ]
     ncol = 2
@@ -721,7 +721,7 @@ def plot_family_dual_metric_grid(
         handles.extend(
             [
                 mlines.Line2D([], [], color=COLORS["REFERENCE"], lw=1.0, ls=":", label=r"Reference $J^*/J^* = 1$"),
-                mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label=r"ID at $t=20$"),
+                mlines.Line2D([], [], color=COLORS["ID"], marker="o", ls="None", ms=5, label=r"CR-ID at $t=20$"),
                 mlines.Line2D([], [], color=COLORS["FD"], marker="s", ls="None", ms=5, label=r"FD at $t=20$"),
             ]
         )
@@ -1270,7 +1270,7 @@ def main():
         f.write("% Auto-generated by exp03_readout_realism_best_mode.py\n")
         f.write("\\begin{tabular}{l l c c}\n")
         f.write("\\toprule\n")
-        f.write("Family & Metric & VQE+ID & VQE+FD\\\\\n")
+        f.write("Family & Metric & VQE+CR-ID & VQE+FD\\\\\n")
         f.write("\\midrule\n")
         for row in summary_rows:
             f.write(
@@ -1291,7 +1291,7 @@ def main():
         for row in summary_rows:
             f.write(
                 f"{row['family']} | {row['metric']}: "
-                f"ID={float(row['ID_mean']):.4f}+/-{float(row['ID_stderr']):.4f} | "
+                f"CR-ID={float(row['ID_mean']):.4f}+/-{float(row['ID_stderr']):.4f} | "
                 f"FD={float(row['FD_mean']):.4f}+/-{float(row['FD_stderr']):.4f}\n"
             )
         f.write(f"Figure: {fig_path.name}\n")

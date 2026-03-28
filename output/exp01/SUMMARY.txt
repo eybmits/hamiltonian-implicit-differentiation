@@ -1,4 +1,4 @@
-Experiment 1 — Core ID vs FD Demo
+Experiment 1 — Core CR-ID vs FD Demo
 
 Contents:
 - linear/: five single-family panels plus SUMMARY.txt
