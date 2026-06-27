@@ -6,8 +6,8 @@ single standard runner interface through `paramham-reproduce`.
 ## Environment
 
 ```bash
-git clone https://github.com/eybmits/parameterized-hamiltonians-id.git
-cd parameterized-hamiltonians-id
+git clone https://github.com/eybmits/hamiltonian-implicit-differentiation.git
+cd hamiltonian-implicit-differentiation
 
 python -m venv .venv
 source .venv/bin/activate

@@ -33,9 +33,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/eybmits/parameterized-hamiltonians-id"
-Repository = "https://github.com/eybmits/parameterized-hamiltonians-id"
-Issues = "https://github.com/eybmits/parameterized-hamiltonians-id/issues"
+Homepage = "https://github.com/eybmits/hamiltonian-implicit-differentiation"
+Repository = "https://github.com/eybmits/hamiltonian-implicit-differentiation"
+Issues = "https://github.com/eybmits/hamiltonian-implicit-differentiation/issues"
 
 [project.scripts]
 paramham-reproduce = "paramham.reproduce:main"
