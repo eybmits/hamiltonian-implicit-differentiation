@@ -1,9 +1,10 @@
 cff-version: 1.2.0
-title: "paramham"
+title: "Hamiltonian Implicit Differentiation"
 message: "If you use this software, please cite it using this metadata."
 type: software
 authors:
-  - family-names: "Markus"
+  - family-names: "Baumann"
+    given-names: "Markus"
 repository-code: "https://github.com/eybmits/hamiltonian-implicit-differentiation"
 license: "MIT"
 version: "0.3.0"
